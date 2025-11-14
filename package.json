@@ -9,7 +9,6 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "expo": "~54.0.12",
     "expo-camera": "~17.0.8",
     "expo-dev-client": "~6.0.13",
     "expo-file-system": "~19.0.16",
@@ -17,9 +16,13 @@
     "expo-sensors": "~15.0.7",
     "expo-sharing": "~14.0.7",
     "expo-status-bar": "~3.0.8",
+    "expo-updates": "~29.0.12",
     "react": "19.1.0",
     "react-native": "0.81.4",
     "react-native-maps": "1.20.1"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "expo": "^54.0.12"
+  }
 }
