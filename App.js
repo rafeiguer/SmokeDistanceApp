@@ -148,6 +148,16 @@ export default function App() {
   const [currentTheme, setCurrentTheme] = useState('light'); // tema padrão
   const [signalStrength, setSignalStrength] = useState(4); // 1-4 barras de sinal (simulado)
   const [mapType, setMapType] = useState('standard'); // tipo de mapa: standard, satellite, terrain
+
+  // Simulação de sinal de rede dinâmico (varia entre 1-4 barras)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const randomSignal = Math.floor(Math.random() * 4) + 1; // Número aleatório de 1-4
+      setSignalStrength(randomSignal);
+    }, 3000); // Muda a cada 3 segundos
+
+    return () => clearInterval(interval);
+  }, []);
   const cameraRef = useRef(null);
   const [refPressure, setRefPressure] = useState(null); 
   const [refAltitude, setRefAltitude] = useState(null);
