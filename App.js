@@ -5,8 +5,58 @@ import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 import MapView, { Marker, Polyline } from "react-native-maps";
 import * as Location from "expo-location";
 import * as Clipboard from 'expo-clipboard';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Camera } from "expo-camera";
 import { Barometer, DeviceMotion, Accelerometer, Gyroscope } from "expo-sensors";
+
+// Paleta de cores por tema
+const THEME_COLORS = {
+  light: {
+    background: '#ffffff',
+    surface: '#f5f5f5',
+    text: '#000000',
+    textSecondary: '#666666',
+    border: '#dddddd',
+    primary: '#1E90FF',
+    secondary: '#FF6B6B',
+    success: '#4CAF50',
+    warning: '#FFA500',
+    error: '#FF4444',
+    camera: '#f0f0f0',
+    hud: 'rgba(0, 0, 0, 0.6)',
+    hudText: '#ffffff',
+  },
+  dark: {
+    background: '#1a1a1a',
+    surface: '#2d2d2d',
+    text: '#ffffff',
+    textSecondary: '#aaaaaa',
+    border: '#444444',
+    primary: '#1E90FF',
+    secondary: '#FF6B6B',
+    success: '#66BB6A',
+    warning: '#FFA500',
+    error: '#FF4444',
+    camera: '#1a1a1a',
+    hud: 'rgba(255, 255, 255, 0.1)',
+    hudText: '#00ff00',
+  },
+  oled: {
+    background: '#000000',
+    surface: '#1a1a1a',
+    text: '#ffffff',
+    textSecondary: '#999999',
+    border: '#333333',
+    primary: '#00FFFF',
+    secondary: '#FF1493',
+    success: '#00FF00',
+    warning: '#FFD700',
+    error: '#FF4444',
+    camera: '#000000',
+    hud: 'rgba(0, 0, 0, 0.8)',
+    hudText: '#00ff00',
+  },
+};
 
 // Constantes
 const R = 6371000;
@@ -59,7 +109,31 @@ function destinationPoint(lat, lon, distance, bearing) {
     };
 }
 
+// Função para obter cores do tema atual
+function getThemeColors(themeName) {
+  return THEME_COLORS[themeName] || THEME_COLORS.light;
+}
+
 // Componente Principal
+// Constantes de configuração
+const GPS_CONFIG = {
+  mode1: { label: '2s', interval: 2000 },
+  mode2: { label: '5s', interval: 5000 },
+  mode3: { label: '10s', interval: 10000 },
+};
+
+const CAMERA_CONFIG = {
+  mode1: { label: '1s', interval: 1000 },
+  mode2: { label: '2s', interval: 2000 },
+  mode3: { label: '5s', interval: 5000 },
+};
+
+const MAP_TYPE_CONFIG = {
+  standard: { label: 'Rua', type: 'standard' },
+  satellite: { label: 'Satélite', type: 'satellite' },
+  terrain: { label: 'Terreno', type: 'terrain' },
+};
+
 export default function App() {
   const [page, setPage] = useState(1);
   const [location, setLocation] = useState(null);
@@ -69,6 +143,11 @@ export default function App() {
   const [smokeHeight, setSmokeHeight] = useState('100'); 
   const [cameraPermission, setCameraPermission] = useState(null);
   const [cameraActive, setCameraActive] = useState(true); // Estado para controlar câmera
+  const [gpsMode, setGpsMode] = useState('mode2'); // modo padrão: 5s
+  const [cameraMode, setCameraMode] = useState('mode2'); // modo padrão: 2s
+  const [currentTheme, setCurrentTheme] = useState('light'); // tema padrão
+  const [signalStrength, setSignalStrength] = useState(4); // 1-4 barras de sinal (simulado)
+  const [mapType, setMapType] = useState('standard'); // tipo de mapa: standard, satellite, terrain
   const cameraRef = useRef(null);
   const [refPressure, setRefPressure] = useState(null); 
   const [refAltitude, setRefAltitude] = useState(null);
@@ -89,6 +168,25 @@ export default function App() {
     humidity: 'N/D',
     localAltitude: 'N/D',
   });
+
+  // Carregar configurações salvas do AsyncStorage
+  useEffect(() => {
+    (async () => {
+      try {
+        const savedGpsMode = await AsyncStorage.getItem('gpsMode');
+        const savedCameraMode = await AsyncStorage.getItem('cameraMode');
+        const savedTheme = await AsyncStorage.getItem('currentTheme');
+        const savedMapType = await AsyncStorage.getItem('mapType');
+        
+        if (savedGpsMode) setGpsMode(savedGpsMode);
+        if (savedCameraMode) setCameraMode(savedCameraMode);
+        if (savedTheme) setCurrentTheme(savedTheme);
+        if (savedMapType) setMapType(savedMapType);
+      } catch (error) {
+        console.log('Erro ao carregar configurações:', error);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     let baroListener = null;
@@ -218,41 +316,65 @@ export default function App() {
 
   // PÁGINA 1: Câmera
   if (page === 1) {
+    const colors = getThemeColors(currentTheme);
+    
+    // Componente de indicador de sinal
+    const SignalIndicator = () => (
+      <View style={[styles.signalContainer, { backgroundColor: colors.surface }]}>
+        <View style={styles.signalBars}>
+          {[1, 2, 3, 4].map((bar) => (
+            <View
+              key={bar}
+              style={[
+                styles.signalBar,
+                { height: 5 + bar * 3 },
+                bar <= signalStrength ? [styles.signalBarActive, { backgroundColor: colors.primary }] : [styles.signalBarInactive, { backgroundColor: colors.border }]
+              ]}
+            />
+          ))}
+        </View>
+        <View style={[styles.signalCircle, { borderColor: colors.primary }]} />
+      </View>
+    );
+
     return (
-      <View style={{ flex: 1 }}>
+      <View style={[{ flex: 1 }, { backgroundColor: colors.background }]}>
+        {/* Indicador de Sinal de Rede no topo */}
+        <SignalIndicator />
         {/* Seção Superior: Câmera OU Mapa */}
         {cameraPermission && cameraActive ? (
           <View style={{ flex: 0.5 }}>
             <Camera style={{ flex: 1 }} ref={cameraRef} />
-            <View style={styles.hud}>
-              <Text style={styles.hudText}>Distância 3D: {distanceSingle ? `${distanceSingle.toFixed(1)} m` : "N/D"}</Text>
-              <Text style={styles.hudText}>Azimute: {sensorData.orientation ? `${sensorData.orientation.toFixed(1)}°` : "N/D"}</Text>
-              <Text style={styles.hudText}>Alt Média: {baroAltitude ? `${baroAltitude.toFixed(1)} m` : "Calibrando..."}</Text>
-              <Text style={styles.hudText}>Temp: {meteoData.temp}°C | Vento: {meteoData.windSpeed} km/h</Text>
+            <View style={[styles.hud, { backgroundColor: colors.hud }]}>
+              <Text style={[styles.hudText, { color: colors.hudText }]}>Distância 3D: {distanceSingle ? `${distanceSingle.toFixed(1)} m` : "N/D"}</Text>
+              <Text style={[styles.hudText, { color: colors.hudText }]}>Azimute: {sensorData.orientation ? `${sensorData.orientation.toFixed(1)}°` : "N/D"}</Text>
+              <Text style={[styles.hudText, { color: colors.hudText }]}>Alt Média: {baroAltitude ? `${baroAltitude.toFixed(1)} m` : "Calibrando..."}</Text>
+              <Text style={[styles.hudText, { color: colors.hudText }]}>Temp: {meteoData.temp}°C | Vento: {meteoData.windSpeed} km/h</Text>
             </View>
             
             {/* Botão para desativar câmera */}
             <TouchableOpacity 
                 onPress={() => setCameraActive(false)} 
-                style={styles.toggleCameraBtn}
+                style={[styles.toggleCameraBtn, { backgroundColor: colors.surface, borderColor: colors.primary }]}
             >
-                <Text style={styles.btnTextSmall}>📷 Desligar Câmera</Text>
+                <Text style={[styles.btnTextSmall, { color: colors.primary }]}>Desligar Câmera</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 
                 onPress={lockSmokePoint} 
-                style={styles.lockButton}
+                style={[styles.lockButton, { backgroundColor: colors.primary }]}
             >
-                <Text style={styles.btnText}>TRAVAR FUMAÇA</Text>
+                <Text style={[styles.btnText, { color: colors.background }]}>TRAVAR FUMAÇA</Text>
             </TouchableOpacity>
           </View>
         ) : (
           // Mapa Fullscreen quando câmera desligada
-          <View style={{ flex: 0.5 }}>
+          <View style={{ flex: 0.5, backgroundColor: colors.background }}>
             {mapRegion && (
               <MapView 
                 style={{ flex: 1 }} 
                 region={mapRegion} 
+                mapType={mapType}
                 onPress={(e) => setPickedPoint(e.nativeEvent.coordinate)}
                 showsUserLocation={true}
                 showsMyLocationButton={true}
@@ -307,26 +429,27 @@ export default function App() {
         )}
 
         {/* Seção Inferior: Controles */}
-        <View style={{ flex: 0.5, padding: 10 }}>
+        <View style={[{ flex: 0.5, padding: 10 }, { backgroundColor: colors.background }]}>
           {mapRegion && (
-            <MapView style={{ height: 150 }} region={mapRegion} onPress={(e) => setPickedPoint(e.nativeEvent.coordinate)}>
+            <MapView style={{ height: 150 }} region={mapRegion} mapType={mapType} onPress={(e) => setPickedPoint(e.nativeEvent.coordinate)}>
               {location && <Marker coordinate={location} title="Eu" pinColor="blue" />}
               {pickedPoint && <Marker coordinate={pickedPoint} title="Alvo Fumaça" pinColor="red" />}
             </MapView>
           )}
           
-          <Text style={{ fontWeight: 'bold', marginTop: 10 }}>Altura Estimada da Fumaça (m):</Text>
+          <Text style={[{ fontWeight: 'bold', marginTop: 10 }, { color: colors.text }]}>Altura Estimada da Fumaça (m):</Text>
           <TextInput 
-              style={styles.input} 
+              style={[styles.input, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]} 
               keyboardType="numeric" 
               value={smokeHeight} 
               onChangeText={setSmokeHeight}
               placeholder="Ex: 100"
+              placeholderTextColor={colors.textSecondary}
           />
           
           <View style={{ flexDirection: 'row', marginTop: 10 }}>
-            <TouchableOpacity onPress={() => setPage(2)} style={styles.btn}><Text style={styles.btnText}>Manual / Relatório</Text></TouchableOpacity>
-            <TouchableOpacity onPress={() => setPage(3)} style={styles.btnGray}><Text style={styles.btnText}>Configurações/Meteo</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setPage(2)} style={[styles.btn, { backgroundColor: colors.primary }]}><Text style={[styles.btnText, { color: colors.background }]}>Manual / Relatório</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setPage(3)} style={[styles.btnGray, { backgroundColor: colors.surface, borderColor: colors.primary }]}><Text style={[styles.btnText, { color: colors.primary }]}>Configurações/Meteo</Text></TouchableOpacity>
           </View>
         </View>
       </View>
@@ -335,32 +458,136 @@ export default function App() {
 
   // PÁGINA 2: Triangulação e Relatórios
   if (page === 2) {
-    return <Page2 location={location} baroAltitude={baroAltitude} sensorData={sensorData} meteoData={meteoData} setPage={setPage} openInGoogleMaps={openInGoogleMaps} />;
+    return <Page2 location={location} baroAltitude={baroAltitude} sensorData={sensorData} meteoData={meteoData} setPage={setPage} openInGoogleMaps={openInGoogleMaps} mapType={mapType} />;
   }
 
   // PÁGINA 3: Configurações
   if (page === 3) {
+    const handleGpsModeChange = async (mode) => {
+      setGpsMode(mode);
+      await AsyncStorage.setItem('gpsMode', mode);
+    };
+
+    const handleCameraModeChange = async (mode) => {
+      setCameraMode(mode);
+      await AsyncStorage.setItem('cameraMode', mode);
+    };
+
+    const handleThemeChange = async (theme) => {
+      setCurrentTheme(theme);
+      await AsyncStorage.setItem('currentTheme', theme);
+    };
+
+    const handleMapTypeChange = async (type) => {
+      setMapType(type);
+      await AsyncStorage.setItem('mapType', type);
+    };
+
     return (
-      <ScrollView style={{ flex: 1, padding: 10 }}>
-        <Text style={{ fontWeight: 'bold', fontSize: 16 }}>Dados de Sensores e Meteo (Rede)</Text>
-        <Text style={{ color: 'red' }}>*** Os dados de Vento/Temp/Umidade precisam de API externa. ***</Text>
-        <Text style={{ fontWeight: 'bold', marginTop: 10 }}>Dados Meteorológicos (Simulados/API):</Text>
-        <Text>Altitude Local (GPS): {meteoData.localAltitude} m</Text>
-        <Text>Temperatura: {meteoData.temp} °C</Text>
-        <Text>Velocidade do Vento: {meteoData.windSpeed} km/h</Text>
-        <Text>Direção do Vento: {meteoData.windDirection}</Text>
-        <Text>Umidade do Ar: {meteoData.humidity} %</Text>
+      <ScrollView style={[{ flex: 1, padding: 10 }, { backgroundColor: colors.background }]}>
+        {/* SEÇÃO: TEMA */}
+        <View style={{ marginBottom: 20 }}>
+          <Text style={[{ fontWeight: 'bold', fontSize: 16, marginBottom: 10 }, { color: colors.text }]}>Tema</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
+            <TouchableOpacity 
+              onPress={() => handleThemeChange('light')}
+              style={[styles.configButton, currentTheme === 'light' && styles.configButtonActive, currentTheme === 'light' && { backgroundColor: colors.primary }]}
+            >
+              <Text style={[styles.configButtonText, currentTheme === 'light' && { color: '#fff' }]}>Claro</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={() => handleThemeChange('dark')}
+              style={[styles.configButton, currentTheme === 'dark' && styles.configButtonActive, currentTheme === 'dark' && { backgroundColor: colors.primary }]}
+            >
+              <Text style={[styles.configButtonText, currentTheme === 'dark' && { color: '#fff' }]}>Escuro</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={() => handleThemeChange('oled')}
+              style={[styles.configButton, currentTheme === 'oled' && styles.configButtonActive, currentTheme === 'oled' && { backgroundColor: colors.primary }]}
+            >
+              <Text style={[styles.configButtonText, currentTheme === 'oled' && { color: '#fff' }]}>OLED</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* SEÇÃO: CONFIGURAÇÃO GPS */}
+        <View style={{ marginBottom: 20 }}>
+          <Text style={[{ fontWeight: 'bold', fontSize: 16, marginBottom: 10 }, { color: colors.text }]}>Intervalo GPS</Text>
+          <Text style={[{ fontSize: 12, marginBottom: 10 }, { color: colors.textSecondary }]}>Modo atual: {GPS_CONFIG[gpsMode].label}</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
+            {Object.entries(GPS_CONFIG).map(([key, config]) => (
+              <TouchableOpacity
+                key={key}
+                onPress={() => handleGpsModeChange(key)}
+                style={[styles.configButton, gpsMode === key && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+              >
+                <Text style={[styles.configButtonText, gpsMode === key && { color: '#fff' }]}>{config.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* SEÇÃO: CONFIGURAÇÃO CÂMERA */}
+        <View style={{ marginBottom: 20 }}>
+          <Text style={[{ fontWeight: 'bold', fontSize: 16, marginBottom: 10 }, { color: colors.text }]}>Intervalo Câmera</Text>
+          <Text style={[{ fontSize: 12, marginBottom: 10 }, { color: colors.textSecondary }]}>Modo atual: {CAMERA_CONFIG[cameraMode].label}</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
+            {Object.entries(CAMERA_CONFIG).map(([key, config]) => (
+              <TouchableOpacity
+                key={key}
+                onPress={() => handleCameraModeChange(key)}
+                style={[styles.configButton, cameraMode === key && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+              >
+                <Text style={[styles.configButtonText, cameraMode === key && { color: '#fff' }]}>{config.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* SEÇÃO: TIPO DE MAPA */}
+        <View style={{ marginBottom: 20 }}>
+          <Text style={[{ fontWeight: 'bold', fontSize: 16, marginBottom: 10 }, { color: colors.text }]}>Tipo de Mapa</Text>
+          <Text style={[{ fontSize: 12, marginBottom: 10 }, { color: colors.textSecondary }]}>Modo atual: {MAP_TYPE_CONFIG[mapType].label}</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
+            {Object.entries(MAP_TYPE_CONFIG).map(([key, config]) => (
+              <TouchableOpacity
+                key={key}
+                onPress={() => handleMapTypeChange(key)}
+                style={[styles.configButton, mapType === key && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+              >
+                <Text style={[styles.configButtonText, mapType === key && { color: '#fff' }]}>{config.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* SEÇÃO: DADOS METEOROLÓGICOS */}
+        <View style={{ marginBottom: 20 }}>
+          <Text style={[{ fontWeight: 'bold', fontSize: 16 }, { color: colors.text }]}>Dados de Sensores e Meteo</Text>
+          <Text style={[{ fontSize: 12, marginVertical: 10 }, { color: colors.error }]}>*** Os dados de Vento/Temp/Umidade precisam de API externa. ***</Text>
+          <Text style={[{ fontWeight: 'bold', marginTop: 10 }, { color: colors.text }]}>Dados Meteorológicos (Simulados/API):</Text>
+          <Text style={{ color: colors.text }}>Altitude Local (GPS): {meteoData.localAltitude} m</Text>
+          <Text style={{ color: colors.text }}>Temperatura: {meteoData.temp} °C</Text>
+          <Text style={{ color: colors.text }}>Velocidade do Vento: {meteoData.windSpeed} km/h</Text>
+          <Text style={{ color: colors.text }}>Direção do Vento: {meteoData.windDirection}</Text>
+          <Text style={{ color: colors.text }}>Umidade do Ar: {meteoData.humidity} %</Text>
+        </View>
         
-        <TouchableOpacity onPress={() => setPage(1)} style={styles.btnGray}><Text style={styles.btnText}>Voltar Camera</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => setPage(1)} style={[styles.btnGray, { backgroundColor: colors.surface, borderColor: colors.primary }]}><Text style={[styles.btnText, { color: colors.primary }]}>Voltar Camera</Text></TouchableOpacity>
       </ScrollView>
     );
   }
 
-  return null;
+  // Fallback padrão: retorna página 1
+  return (
+    <View style={{ flex: 1 }}>
+      <Text>Página não encontrada</Text>
+    </View>
+  );
 }
 
 // COMPONENTE PÁGINA 2
-function Page2({ location, baroAltitude, sensorData, meteoData, setPage, openInGoogleMaps }) {
+function Page2({ location, baroAltitude, sensorData, meteoData, setPage, openInGoogleMaps, mapType }) {
   const [activeTab, setActiveTab] = useState('triangulacao');
   
   // Estados para triangulação
@@ -790,6 +1017,7 @@ Elevação: ${singleObs.elevacao}°
           {location && (
             <MapView 
               style={styles.mapView}
+              mapType={mapType}
               initialRegion={{
                 latitude: intersection?.latitude || singleResult?.latitude || location.latitude,
                 longitude: intersection?.longitude || singleResult?.longitude || location.longitude,
@@ -1277,5 +1505,53 @@ const styles = StyleSheet.create({
     color: '#555',
     marginVertical: 3,
     lineHeight: 18,
+  },
+  configButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#ddd',
+    backgroundColor: '#f0f0f0',
+  },
+  configButtonActive: {
+    backgroundColor: '#1E90FF',
+    borderColor: '#1E90FF',
+  },
+  configButtonText: {
+    fontWeight: '600',
+    fontSize: 12,
+    color: '#333',
+  },
+  signalContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    backgroundColor: '#f0f0f0',
+  },
+  signalBars: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginRight: 8,
+    gap: 3,
+  },
+  signalBar: {
+    width: 3,
+    borderRadius: 1,
+  },
+  signalBarActive: {
+    backgroundColor: '#1E90FF',
+  },
+  signalBarInactive: {
+    backgroundColor: '#ddd',
+  },
+  signalCircle: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#1E90FF',
   },
 });

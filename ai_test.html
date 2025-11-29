@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔥 Teste de IA - Imagens de Fumaça</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e1e2e 0%, #16213e 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #FF6B6B, #FFA500);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header p {
+            color: #AAA;
+            font-size: 14px;
+        }
+
+        .instructions {
+            background: rgba(255, 107, 107, 0.1);
+            border: 2px solid #FF6B6B;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+            color: #FFF;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 12px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(76, 175, 80, 0.3);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(45deg, #2196F3, #1976D2);
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(33, 150, 243, 0.3);
+        }
+
+        .btn-danger {
+            background: linear-gradient(45deg, #F44336, #D32F2F);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(244, 67, 54, 0.3);
+        }
+
+        .display-area {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .display-area img,
+        .display-area canvas,
+        .display-area div {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .info-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            backdrop-filter: blur(4px);
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+            color: white;
+        }
+
+        .stat-card h3 {
+            font-size: 12px;
+            color: #AAA;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: bold;
+            background: linear-gradient(45deg, #4CAF50, #FFA500);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .test-log {
+            background: #0A0A0A;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            color: #0F0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            margin-bottom: 6px;
+            padding: 4px;
+        }
+
+        .log-success { color: #4CAF50; }
+        .log-error { color: #F44336; }
+        .log-info { color: #2196F3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔥 TESTE DE IA - FUMAÇA</h1>
+            <p>Exiba imagens na tela e aponte a câmera do celular para testar a detecção</p>
+        </div>
+
+        <div class="instructions">
+            <strong>📱 Como usar:</strong><br>
+            1️⃣ Abra o SmokeDistance no Expo Go (celular)<br>
+            2️⃣ Vá à Página 3 (Câmera)<br>
+            3️⃣ Clique nos botões abaixo para exibir imagens de teste<br>
+            4️⃣ Aponte a câmera do celular para a tela do PC<br>
+            5️⃣ Clique em "🔥 DETECTAR IA" no celular<br>
+            6️⃣ Veja se a IA detectou corretamente!
+        </div>
+
+        <div class="controls">
+            <button class="btn-primary" onclick="showSmoke()">🔥 Fumaça Densa</button>
+            <button class="btn-primary" onclick="showSmokeThin()">💨 Fumaça Fina</button>
+            <button class="btn-secondary" onclick="showSky()">☁️ Céu Limpo</button>
+            <button class="btn-secondary" onclick="showWall()">🧱 Parede Cinza</button>
+            <button class="btn-secondary" onclick="showGreen()">🌿 Vegetação</button>
+            <button class="btn-danger" onclick="showFire()">🔥 Fogo/Vermelho</button>
+        </div>
+
+        <div class="display-area" id="displayArea">
+            <div class="info-overlay" id="infoText">
+                Escolha uma imagem acima para começar
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <h3>Tipo Atual</h3>
+                <div class="value" id="currentType">—</div>
+            </div>
+            <div class="stat-card">
+                <h3>Testes Realizados</h3>
+                <div class="value" id="testCount">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Última Ação</h3>
+                <div class="value" id="lastAction">—</div>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin: 20px 0; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+            <h3 style="color: #FFF; margin-bottom: 15px;">📱 QR Code - Conectar ao App</h3>
+            <canvas id="qrCode" style="max-width: 200px; margin: 0 auto; display: block; background: white; padding: 10px; border-radius: 8px;"></canvas>
+            <p style="color: #AAA; font-size: 12px; margin-top: 10px;">Aponte a câmera do celular para este QR Code</p>
+        </div>
+
+        <div class="test-log" id="testLog"></div>
+    </div>
+
+    <script>
+        let testCount = 0;
+        let currentImage = 'none';
+
+        function createCanvas() {
+            const area = document.getElementById('displayArea');
+            const canvas = document.createElement('canvas');
+            canvas.width = area.offsetWidth;
+            canvas.height = area.offsetHeight;
+            area.innerHTML = '';
+            area.appendChild(canvas);
+            return canvas.getContext('2d');
+        }
+
+        function drawSmoke() {
+            const ctx = createCanvas();
+            const canvas = ctx.canvas;
+            
+            // Fundo cinza base
+            ctx.fillStyle = '#808080';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Adicionar fumaça com gradientes
+            for (let i = 0; i < 20; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                const size = Math.random() * 100 + 50;
+                const gray = Math.random() * 80 + 130;
+                
+                const gradient = ctx.createRadialGradient(x, y, 0, x, y, size);
+                gradient.addColorStop(0, `rgba(${gray}, ${gray}, ${gray}, 0.6)`);
+                gradient.addColorStop(1, `rgba(${gray}, ${gray}, ${gray}, 0)`);
+                
+                ctx.fillStyle = gradient;
+                ctx.fillRect(x - size, y - size, size * 2, size * 2);
+            }
+            
+            currentImage = 'FUMAÇA DENSA';
+            log('Exibindo: FUMAÇA DENSA', 'info');
+        }
+
+        function drawSmokeThin() {
+            const ctx = createCanvas();
+            const canvas = ctx.canvas;
+            
+            // Fundo azul claro (céu)
+            ctx.fillStyle = '#87CEEB';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Fumaça fina
+            for (let i = 0; i < 10; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                const size = Math.random() * 60 + 30;
+                
+                const gradient = ctx.createRadialGradient(x, y, 0, x, y, size);
+                gradient.addColorStop(0, `rgba(200, 200, 200, 0.4)`);
+                gradient.addColorStop(1, `rgba(200, 200, 200, 0)`);
+                
+                ctx.fillStyle = gradient;
+                ctx.fillRect(x - size, y - size, size * 2, size * 2);
+            }
+            
+            currentImage = 'FUMAÇA FINA';
+            log('Exibindo: FUMAÇA FINA', 'info');
+        }
+
+        function drawSky() {
+            const ctx = createCanvas();
+            const canvas = ctx.canvas;
+            
+            // Gradiente de céu
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87CEEB');
+            gradient.addColorStop(1, '#E0F6FF');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            currentImage = 'CÉU LIMPO';
+            log('Exibindo: CÉU LIMPO', 'success');
+        }
+
+        function drawWall() {
+            const ctx = createCanvas();
+            const canvas = ctx.canvas;
+            
+            // Parede cinza uniforme com pequenas variações
+            for (let y = 0; y < canvas.height; y += 10) {
+                for (let x = 0; x < canvas.width; x += 10) {
+                    const variation = Math.random() * 10;
+                    ctx.fillStyle = `rgb(${150 + variation}, ${150 + variation}, ${150 + variation})`;
+                    ctx.fillRect(x, y, 10, 10);
+                }
+            }
+            
+            currentImage = 'PAREDE CINZA';
+            log('Exibindo: PAREDE CINZA', 'success');
+        }
+
+        function drawGreen() {
+            const ctx = createCanvas();
+            const canvas = ctx.canvas;
+            
+            // Vegetação verde
+            ctx.fillStyle = '#228B22';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Adicionar variações
+            for (let i = 0; i < 30; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                ctx.fillStyle = `rgba(${Math.random() * 50 + 100}, ${Math.random() * 100 + 150}, ${Math.random() * 50 + 50}, 0.3)`;
+                ctx.fillRect(x, y, Math.random() * 50, Math.random() * 50);
+            }
+            
+            currentImage = 'VEGETAÇÃO';
+            log('Exibindo: VEGETAÇÃO', 'success');
+        }
+
+        function drawFire() {
+            const ctx = createCanvas();
+            const canvas = ctx.canvas;
+            
+            // Fundo quente
+            ctx.fillStyle = '#FF4500';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Adicionar cores quentes
+            for (let i = 0; i < 15; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                const size = Math.random() * 80 + 40;
+                
+                const gradient = ctx.createRadialGradient(x, y, 0, x, y, size);
+                gradient.addColorStop(0, `rgba(255, 200, 0, 0.5)`);
+                gradient.addColorStop(1, `rgba(255, 100, 0, 0)`);
+                
+                ctx.fillStyle = gradient;
+                ctx.fillRect(x - size, y - size, size * 2, size * 2);
+            }
+            
+            currentImage = 'FOGO/CORES QUENTES';
+            log('Exibindo: FOGO/CORES QUENTES', 'error');
+        }
+
+        function showSmoke() {
+            drawSmoke();
+            updateStats('🔥 FUMAÇA DENSA');
+        }
+
+        function showSmokeThin() {
+            drawSmokeThin();
+            updateStats('💨 FUMAÇA FINA');
+        }
+
+        function showSky() {
+            drawSky();
+            updateStats('☁️ CÉU LIMPO');
+        }
+
+        function showWall() {
+            drawWall();
+            updateStats('🧱 PAREDE');
+        }
+
+        function showGreen() {
+            drawGreen();
+            updateStats('🌿 VEGETAÇÃO');
+        }
+
+        function showFire() {
+            drawFire();
+            updateStats('🔥 FOGO');
+        }
+
+        function updateStats(type) {
+            testCount++;
+            document.getElementById('currentType').textContent = type;
+            document.getElementById('testCount').textContent = testCount;
+            document.getElementById('lastAction').textContent = new Date().toLocaleTimeString();
+        }
+
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('testLog');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+    </script>
+</body>
+</html>

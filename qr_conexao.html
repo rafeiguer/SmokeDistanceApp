@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📱 Conexão Expo Go - SmokeDistance</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e1e2e 0%, #16213e 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid #FF6B6B;
+            border-radius: 20px;
+            padding: 40px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+
+        .header {
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            color: #FFF;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #FF6B6B, #FFA500);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header p {
+            color: #AAA;
+            font-size: 14px;
+        }
+
+        .qr-section {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 30px;
+            margin: 30px 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .qr-title {
+            color: #FFF;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        canvas {
+            max-width: 300px;
+            width: 100%;
+            height: auto;
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 0 auto;
+            display: block;
+        }
+
+        .instructions {
+            background: rgba(76, 175, 80, 0.1);
+            border-left: 4px solid #4CAF50;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 30px 0;
+            text-align: left;
+            color: #FFF;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+
+        .instructions h3 {
+            color: #4CAF50;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+        }
+
+        .instructions li {
+            margin-bottom: 8px;
+        }
+
+        .instructions code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            color: #FFD700;
+        }
+
+        .info-box {
+            background: rgba(33, 150, 243, 0.1);
+            border-left: 4px solid #2196F3;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #AAA;
+            font-size: 12px;
+        }
+
+        .url-display {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #00FF00;
+            font-family: 'Courier New', monospace;
+            word-break: break-all;
+            font-size: 12px;
+        }
+
+        .copy-button {
+            background: linear-gradient(45deg, #2196F3, #1976D2);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 10px;
+            transition: all 0.3s;
+        }
+
+        .copy-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+        }
+
+        .success-message {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 10px;
+            display: none;
+            font-weight: bold;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            color: #FFF;
+            font-size: 13px;
+        }
+
+        .status .label {
+            color: #AAA;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .status .value {
+            color: #00FF00;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📱 EXPO GO - SmokeDistance</h1>
+            <p>Escaneie o QR Code com o seu celular para conectar</p>
+        </div>
+
+        <div class="qr-section">
+            <div class="qr-title">🔗 QR Code de Conexão</div>
+            <canvas id="qrcode"></canvas>
+        </div>
+
+        <div class="url-display" id="urlDisplay">
+            Carregando URL...
+        </div>
+
+        <button class="copy-button" onclick="copiarURL()">📋 Copiar URL</button>
+        <div class="success-message" id="successMsg">✅ URL copiada!</div>
+
+        <div class="instructions">
+            <h3>📖 Como Conectar:</h3>
+            <ol>
+                <li>Abra o <strong>Expo Go</strong> no seu celular</li>
+                <li>Toque em <strong>"Scan QR Code"</strong> ou <strong>"Escanear"</strong></li>
+                <li>Aponte a câmera para o QR Code acima</li>
+                <li>O app vai carregar automaticamente!</li>
+            </ol>
+        </div>
+
+        <div class="info-box">
+            💡 <strong>Dica:</strong> Se o QR Code não funcionar, copie a URL e cole no Expo Go manualmente
+        </div>
+
+        <div class="status">
+            <div class="label">🖥️ Servidor</div>
+            <div class="value" id="statusValue">Aguardando conexão...</div>
+        </div>
+    </div>
+
+    <script>
+        function getLocalIP() {
+            // Tentar obter o IP local
+            // Fallback para localhost se em desenvolvimento
+            const hostname = window.location.hostname;
+            const port = window.location.port || 19000;
+            
+            return `exp://${hostname}:${port}`;
+        }
+
+        function generateQRCode() {
+            const url = getLocalIP();
+            
+            // Exibir URL
+            document.getElementById('urlDisplay').textContent = url;
+            document.getElementById('statusValue').textContent = url;
+            
+            // Gerar QR Code
+            new QRious({
+                element: document.getElementById('qrcode'),
+                value: url,
+                size: 300
+            });
+            
+            console.log('🔗 URL Expo:', url);
+        }
+
+        function copiarURL() {
+            const url = document.getElementById('urlDisplay').textContent;
+            
+            navigator.clipboard.writeText(url).then(() => {
+                const msg = document.getElementById('successMsg');
+                msg.style.display = 'block';
+                
+                setTimeout(() => {
+                    msg.style.display = 'none';
+                }, 3000);
+            });
+        }
+
+        // Gerar QR Code ao carregar a página
+        window.addEventListener('load', generateQRCode);
+    </script>
+</body>
+</html>

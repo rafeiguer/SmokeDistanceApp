@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "expo-camera": "~17.0.8",
+    "expo-clipboard": "^8.0.7",
     "expo-dev-client": "~6.0.13",
     "expo-file-system": "~19.0.16",
     "expo-location": "~19.0.7",

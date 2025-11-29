@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmokeDistance - Guia de Publicação</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            color: #666;
+        }
+        
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .step-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            border-left: 5px solid;
+            transition: transform 0.3s ease;
+        }
+        
+        .step-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .step-card.android {
+            border-left-color: #3DDC84;
+        }
+        
+        .step-card.ios {
+            border-left-color: #000000;
+        }
+        
+        .step-card.general {
+            border-left-color: #667eea;
+        }
+        
+        .step-card h2 {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+        
+        .step-card p {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 15px;
+        }
+        
+        .step-card code {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            display: block;
+            font-family: 'Courier New', monospace;
+            color: #d63384;
+            overflow-x: auto;
+            margin-bottom: 10px;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+        
+        .btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.3s ease;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .btn-android {
+            background: #3DDC84;
+        }
+        
+        .btn-android:hover {
+            background: #2db373;
+            transform: scale(1.05);
+        }
+        
+        .btn-ios {
+            background: #000000;
+        }
+        
+        .btn-ios:hover {
+            background: #333;
+            transform: scale(1.05);
+        }
+        
+        .btn-primary {
+            background: #667eea;
+        }
+        
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: scale(1.05);
+        }
+        
+        .timeline {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .timeline h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .timeline-item {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            position: relative;
+        }
+        
+        .timeline-item:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            left: 19px;
+            top: 50px;
+            width: 2px;
+            height: 50px;
+            background: #ddd;
+        }
+        
+        .timeline-number {
+            background: #667eea;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+        
+        .timeline-content h3 {
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .timeline-content p {
+            color: #666;
+            margin-bottom: 10px;
+        }
+        
+        .timeline-content code {
+            background: #f5f5f5;
+            padding: 8px 12px;
+            border-radius: 3px;
+            display: inline-block;
+            font-family: 'Courier New', monospace;
+            color: #d63384;
+        }
+        
+        .checklist {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .checklist h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .checklist-group {
+            margin-bottom: 20px;
+        }
+        
+        .checklist-group h3 {
+            color: #333;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+        }
+        
+        .checklist-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            color: #666;
+        }
+        
+        .checklist-item input {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        
+        .emoji {
+            font-size: 1.2em;
+            margin-right: 5px;
+        }
+        
+        .cost-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        .cost-table th,
+        .cost-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .cost-table th {
+            background: #f5f5f5;
+            font-weight: bold;
+        }
+        
+        .cost-table tr:hover {
+            background: #f9f9f9;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8em;
+            }
+            
+            .steps {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🚀 SmokeDistance - Publicação em Stores</h1>
+            <p>Guia completo para publicar na Apple App Store e Google Play Store</p>
+        </div>
+        
+        <!-- Quick Start -->
+        <div class="steps">
+            <!-- Android Card -->
+            <div class="step-card android">
+                <h2><span class="emoji">🤖</span> Google Play Store</h2>
+                <p>Publique seu app Android em minutos!</p>
+                <code>.\deploy.ps1 -Platform android -VersionType patch</code>
+                <div class="button-group">
+                    <a href="#android-guide" class="btn btn-android">📖 Guia Completo</a>
+                </div>
+                <p><strong>⏱️ Tempo:</strong> 1-3 horas (incluindo revisão)</p>
+                <p><strong>💰 Custo:</strong> $25 (única vez)</p>
+            </div>
+            
+            <!-- iOS Card -->
+            <div class="step-card ios">
+                <h2><span class="emoji">🍎</span> Apple App Store</h2>
+                <p>Publique seu app iOS com confiança!</p>
+                <code>.\deploy.ps1 -Platform ios -VersionType patch</code>
+                <div class="button-group">
+                    <a href="#ios-guide" class="btn btn-ios">📖 Guia Completo</a>
+                </div>
+                <p><strong>⏱️ Tempo:</strong> 24-48 horas (incluindo revisão)</p>
+                <p><strong>💰 Custo:</strong> $99/ano</p>
+            </div>
+            
+            <!-- Both Card -->
+            <div class="step-card general">
+                <h2><span class="emoji">⚡</span> Publicar Ambos</h2>
+                <p>Publique em iOS e Android simultaneamente!</p>
+                <code>.\deploy.ps1 -Platform both -VersionType patch</code>
+                <div class="button-group">
+                    <a href="#both-guide" class="btn btn-primary">📖 Instrções</a>
+                </div>
+                <p><strong>⏱️ Tempo:</strong> Paralelo (45 min build)</p>
+                <p><strong>💰 Custo:</strong> $124/ano</p>
+            </div>
+        </div>
+        
+        <!-- Timeline -->
+        <div class="timeline">
+            <h2><span class="emoji">📋</span> Processo Passo-a-Passo</h2>
+            
+            <div class="timeline-item">
+                <div class="timeline-number">1</div>
+                <div class="timeline-content">
+                    <h3>Preparar Versão</h3>
+                    <p>Incrementar versão (patch/minor/major)</p>
+                    <code>.\deploy.ps1 -VersionType patch</code>
+                </div>
+            </div>
+            
+            <div class="timeline-item">
+                <div class="timeline-number">2</div>
+                <div class="timeline-content">
+                    <h3>Autenticar</h3>
+                    <p>Fazer login no Expo e verificar credenciais</p>
+                    <code>eas login</code>
+                </div>
+            </div>
+            
+            <div class="timeline-item">
+                <div class="timeline-number">3</div>
+                <div class="timeline-content">
+                    <h3>Fazer Build</h3>
+                    <p>Gerar APK/AAB (Android) ou IPA (iOS)</p>
+                    <code>eas build --platform android --type app-signing</code>
+                </div>
+            </div>
+            
+            <div class="timeline-item">
+                <div class="timeline-number">4</div>
+                <div class="timeline-content">
+                    <h3>Preparar Metadados</h3>
+                    <p>Screenshots, descrição, ícones em alta qualidade</p>
+                </div>
+            </div>
+            
+            <div class="timeline-item">
+                <div class="timeline-number">5</div>
+                <div class="timeline-content">
+                    <h3>Upload na Loja</h3>
+                    <p>Google Play Console ou App Store Connect</p>
+                </div>
+            </div>
+            
+            <div class="timeline-item">
+                <div class="timeline-number">6</div>
+                <div class="timeline-content">
+                    <h3>Revisar e Publicar</h3>
+                    <p>Esperar revisão e publicação automática</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Checklist -->
+        <div class="checklist">
+            <h2><span class="emoji">✅</span> Checklist de Publicação</h2>
+            
+            <div class="checklist-group">
+                <h3>Antes de Começar</h3>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>Versão incrementada em package.json</span>
+                </div>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>App testado em Expo Go</span>
+                </div>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>Screenshots prontas (1080x1920+)</span>
+                </div>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>Descrição em português atualizada</span>
+                </div>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>Ícones de alta qualidade (1024x1024+)</span>
+                </div>
+            </div>
+            
+            <div class="checklist-group">
+                <h3>Durante a Publicação</h3>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>Build completado com sucesso</span>
+                </div>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>AAB/IPA baixado</span>
+                </div>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>Upload no console correto</span>
+                </div>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>Notas de versão preenchidas</span>
+                </div>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>Categoria/palavras-chave corretas</span>
+                </div>
+            </div>
+            
+            <div class="checklist-group">
+                <h3>Após Publicação</h3>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>Status monitorado (em revisão/publicado)</span>
+                </div>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>Feedback de reviewers lido</span>
+                </div>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>Divulgado em redes sociais</span>
+                </div>
+                <div class="checklist-item">
+                    <input type="checkbox">
+                    <span>Reviews monitorados</span>
+                </div>
+            </div>
+            
+            <div class="checklist-group">
+                <h3>Custos e Contas</h3>
+                <table class="cost-table">
+                    <thead>
+                        <tr>
+                            <th>Serviço</th>
+                            <th>Custo</th>
+                            <th>Período</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Apple Developer</td>
+                            <td>$99</td>
+                            <td>Anual</td>
+                        </tr>
+                        <tr>
+                            <td>Google Play Developer</td>
+                            <td>$25</td>
+                            <td>Única vez</td>
+                        </tr>
+                        <tr>
+                            <td>Expo (Free)</td>
+                            <td>$0</td>
+                            <td>Sempre</td>
+                        </tr>
+                        <tr style="font-weight: bold; background: #f0f0f0;">
+                            <td>TOTAL ANUAL</td>
+                            <td>$124</td>
+                            <td>-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
