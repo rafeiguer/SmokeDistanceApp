@@ -147,13 +147,24 @@ export default function App() {
   const [cameraMode, setCameraMode] = useState('mode2'); // modo padrão: 2s
   const [currentTheme, setCurrentTheme] = useState('light'); // tema padrão
   const [signalStrength, setSignalStrength] = useState(4); // 1-4 barras de sinal (simulado)
+  const [frozenSignal, setFrozenSignal] = useState(4); // Sinal congelado (último valor detectado)
+  const [signalHistory, setSignalHistory] = useState([]); // Histórico de sinal para gráfico
   const [mapType, setMapType] = useState('standard'); // tipo de mapa: standard, satellite, terrain
+  const [satelliteData, setSatelliteData] = useState([]); // Dados de satélite (FIRMS/VIIRS)
+  const [signalCoverage, setSignalCoverage] = useState(4); // Raio de cobertura do sinal (km)
 
   // Simulação de sinal de rede dinâmico (varia entre 1-4 barras)
   useEffect(() => {
     const interval = setInterval(() => {
       const randomSignal = Math.floor(Math.random() * 4) + 1; // Número aleatório de 1-4
       setSignalStrength(randomSignal);
+      setFrozenSignal(randomSignal); // Congela o último valor
+      
+      // Adiciona ao histórico (máximo 60 pontos)
+      setSignalHistory(prev => {
+        const newHistory = [...prev, { time: new Date(), signal: randomSignal }];
+        return newHistory.slice(-60);
+      });
     }, 3000); // Muda a cada 3 segundos
 
     return () => clearInterval(interval);
@@ -458,9 +469,13 @@ export default function App() {
               placeholderTextColor={colors.textSecondary}
           />
           
-          <View style={{ flexDirection: 'row', marginTop: 10 }}>
-            <TouchableOpacity onPress={() => setPage(2)} style={[styles.btn, { backgroundColor: colors.primary }]}><Text style={[styles.btnText, { color: colors.background }]}>Manual / Relatório</Text></TouchableOpacity>
-            <TouchableOpacity onPress={() => setPage(3)} style={[styles.btnGray, { backgroundColor: colors.surface, borderColor: colors.primary }]}><Text style={[styles.btnText, { color: colors.primary }]}>Configurações/Meteo</Text></TouchableOpacity>
+          <View style={{ flexDirection: 'row', marginTop: 10, gap: 8 }}>
+            <TouchableOpacity onPress={() => setPage(2)} style={[styles.btn, { backgroundColor: colors.primary, flex: 1 }]}><Text style={[styles.btnText, { color: colors.background }]}>Manual / Relatório</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setPage(3)} style={[styles.btnGray, { backgroundColor: colors.surface, borderColor: colors.primary, flex: 1 }]}><Text style={[styles.btnText, { color: colors.primary }]}>Configurações</Text></TouchableOpacity>
+          </View>
+          <View style={{ flexDirection: 'row', marginTop: 8, gap: 8 }}>
+            <TouchableOpacity onPress={() => setPage(4)} style={[styles.btn, { backgroundColor: colors.warning, flex: 1 }]}><Text style={[styles.btnText, { color: '#000' }]}>Sinal/Cobertura</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setPage(5)} style={[styles.btn, { backgroundColor: colors.success, flex: 1 }]}><Text style={[styles.btnText, { color: '#000' }]}>Satélite</Text></TouchableOpacity>
           </View>
         </View>
       </View>
@@ -589,12 +604,141 @@ export default function App() {
     );
   }
 
-  // Fallback padrão: retorna página 1
-  return (
-    <View style={{ flex: 1 }}>
-      <Text>Página não encontrada</Text>
-    </View>
-  );
+  // PÁGINA 4: Sinal e Cobertura
+  if (page === 4) {
+    return (
+      <ScrollView style={[{ flex: 1, padding: 15 }, { backgroundColor: colors.background }]}>
+        <Text style={[{ fontSize: 20, fontWeight: 'bold', marginBottom: 15 }, { color: colors.text }]}>📶 Sinal e Cobertura</Text>
+        
+        {/* Sinal Atual */}
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.primary, borderWidth: 2, padding: 15, marginBottom: 15 }]}>
+          <Text style={[{ fontSize: 14, fontWeight: 'bold', marginBottom: 10 }, { color: colors.text }]}>Sinal em Tempo Real:</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+            {[1, 2, 3, 4].map((bar) => (
+              <View
+                key={bar}
+                style={[
+                  { width: 12, marginHorizontal: 4, borderRadius: 2 },
+                  { height: 10 + bar * 5 },
+                  bar <= signalStrength ? [{ backgroundColor: colors.success }] : [{ backgroundColor: colors.border }]
+                ]}
+              />
+            ))}
+          </View>
+          <Text style={[{ textAlign: 'center', fontSize: 16, fontWeight: 'bold' }, { color: colors.primary }]}>{signalStrength}/4 Barras</Text>
+        </View>
+
+        {/* Sinal Congelado */}
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.warning, borderWidth: 2, padding: 15, marginBottom: 15 }]}>
+          <Text style={[{ fontSize: 14, fontWeight: 'bold', marginBottom: 10 }, { color: colors.text }]}>Último Sinal Detectado (Congelado):</Text>
+          <Text style={[{ fontSize: 24, fontWeight: 'bold', textAlign: 'center' }, { color: colors.warning }]}>{frozenSignal}/4 Barras</Text>
+          <Text style={[{ fontSize: 12, textAlign: 'center', marginTop: 5 }, { color: colors.textSecondary }]}>Gravado em: {new Date().toLocaleTimeString()}</Text>
+        </View>
+
+        {/* Cobertura de Sinal */}
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.info, borderWidth: 2, padding: 15, marginBottom: 15 }]}>
+          <Text style={[{ fontSize: 14, fontWeight: 'bold', marginBottom: 10 }, { color: colors.text }]}>Área de Cobertura:</Text>
+          <Text style={[{ fontSize: 12, marginBottom: 5 }, { color: colors.text }]}>Raio: {signalCoverage} km</Text>
+          <View style={{ backgroundColor: colors.border, height: 200, borderRadius: 10, overflow: 'hidden', marginBottom: 10 }}>
+            <MapView
+              style={{ flex: 1 }}
+              region={{ latitude: -23.5505, longitude: -46.6333, latitudeDelta: 0.1, longitudeDelta: 0.1 }}
+              showsUserLocation={true}
+            />
+          </View>
+          <Text style={[{ fontSize: 12, textAlign: 'center' }, { color: colors.textSecondary }]}>Zona coberta: {Math.PI * signalCoverage * signalCoverage * 3.14159.toFixed(2)} km²</Text>
+        </View>
+
+        {/* Histórico */}
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.primary, borderWidth: 1, padding: 15 }]}>
+          <Text style={[{ fontSize: 14, fontWeight: 'bold', marginBottom: 10 }, { color: colors.text }]}>Histórico de Sinal:</Text>
+          <Text style={[{ fontSize: 12 }, { color: colors.textSecondary }]}>Últimas {signalHistory.length} leituras</Text>
+          {signalHistory.length > 0 && (
+            <View style={{ marginTop: 10 }}>
+              {signalHistory.slice(-5).reverse().map((item, idx) => (
+                <Text key={idx} style={[{ fontSize: 11, marginVertical: 3 }, { color: colors.text }]}>
+                  {item.time.toLocaleTimeString()} - {item.signal}/4 barras
+                </Text>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <TouchableOpacity onPress={() => setPage(1)} style={[styles.btnGray, { backgroundColor: colors.surface, borderColor: colors.primary, marginTop: 20 }]}><Text style={[styles.btnText, { color: colors.primary }]}>Voltar</Text></TouchableOpacity>
+      </ScrollView>
+    );
+  }
+
+  // PÁGINA 5: Satélite e Focos de Incêndio
+  if (page === 5) {
+    return (
+      <ScrollView style={[{ flex: 1, padding: 15 }, { backgroundColor: colors.background }]}>
+        <Text style={[{ fontSize: 20, fontWeight: 'bold', marginBottom: 15 }, { color: colors.success }]}>🛰️ Monitoramento de Satélite</Text>
+        
+        {/* Informação de Dados */}
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.success, borderWidth: 2, padding: 15, marginBottom: 15 }]}>
+          <Text style={[{ fontSize: 12, marginBottom: 10 }, { color: colors.textSecondary }]}>Dados: FIRMS (NASA) | VIIRS + MODIS</Text>
+          <Text style={[{ fontSize: 11, marginBottom: 5 }, { color: colors.textSecondary }]}>Atualização: A cada 12h (VIIRS) / 24h (MODIS)</Text>
+          <Text style={[{ fontSize: 11, marginBottom: 5 }, { color: colors.textSecondary }]}>Resolução: 375m (VIIRS) / 1km (MODIS)</Text>
+          <Text style={[{ fontSize: 11 }, { color: colors.error }]}>Último update: {new Date().toLocaleString('pt-BR')}</Text>
+        </View>
+
+        {/* Mapa com Focos */}
+        <View style={[styles.card, { backgroundColor: colors.surface, borderWidth: 1, padding: 0, marginBottom: 15, overflow: 'hidden', borderRadius: 10 }]}>
+          <MapView
+            style={{ height: 250, width: '100%' }}
+            region={{ latitude: -15, longitude: -55, latitudeDelta: 10, longitudeDelta: 10 }}
+            mapType="satellite"
+            showsUserLocation={true}
+          >
+            {/* Exemplo de Focos de Incêndio (FIRMS) */}
+            <Marker
+              coordinate={{ latitude: -15.793889, longitude: -47.879444 }}
+              title="Foco de Incêndio"
+              description="Temperatura: 350°C"
+              pinColor="red"
+            />
+            <Marker
+              coordinate={{ latitude: -14.893889, longitude: -48.879444 }}
+              title="Foco Detectado"
+              description="Temperatura: 320°C"
+              pinColor="orange"
+            />
+          </MapView>
+        </View>
+
+        {/* Estatísticas de Focos */}
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.error, borderWidth: 1, padding: 15, marginBottom: 15 }]}>
+          <Text style={[{ fontSize: 14, fontWeight: 'bold', marginBottom: 10 }, { color: colors.text }]}>Focos Detectados (Últimas 48h):</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={[{ fontSize: 24, fontWeight: 'bold' }, { color: colors.error }]}>2</Text>
+              <Text style={[{ fontSize: 12 }, { color: colors.textSecondary }]}>Críticos</Text>
+            </View>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={[{ fontSize: 24, fontWeight: 'bold' }, { color: colors.warning }]}>5</Text>
+              <Text style={[{ fontSize: 12 }, { color: colors.textSecondary }]}>Moderados</Text>
+            </View>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={[{ fontSize: 24, fontWeight: 'bold' }, { color: colors.success }]}>12</Text>
+              <Text style={[{ fontSize: 12 }, { color: colors.textSecondary }]}>Verificados</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Dados Técnicos */}
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.primary, borderWidth: 1, padding: 15, marginBottom: 15 }]}>
+          <Text style={[{ fontSize: 14, fontWeight: 'bold', marginBottom: 10 }, { color: colors.text }]}>Fonte de Dados:</Text>
+          <Text style={[{ fontSize: 12, marginVertical: 3 }, { color: colors.text }]}>🛰️ VIIRS (Visible Infrared Imaging Radiometer Suite)</Text>
+          <Text style={[{ fontSize: 12, marginVertical: 3 }, { color: colors.text }]}>🛰️ MODIS (Moderate Resolution Imaging Spectroradiometer)</Text>
+          <Text style={[{ fontSize: 12, marginVertical: 3 }, { color: colors.text }]}>📡 Satélites: Suomi NPP, NOAA-20, Aqua, Terra</Text>
+          <Text style={[{ fontSize: 11, marginTop: 10 }, { color: colors.textSecondary }]}>Desenvolvido por: NASA / FIRMS</Text>
+        </View>
+
+        <TouchableOpacity onPress={() => setPage(1)} style={[styles.btnGray, { backgroundColor: colors.surface, borderColor: colors.primary, marginTop: 20 }]}><Text style={[styles.btnText, { color: colors.primary }]}>Voltar</Text></TouchableOpacity>
+      </ScrollView>
+    );
+  }
 }
 
 // COMPONENTE PÁGINA 2
@@ -1570,5 +1714,16 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1.5,
     borderColor: '#1E90FF',
+  },
+  // Estilos para Páginas 4 e 5
+  card: {
+    borderRadius: 10,
+    marginVertical: 8,
+    padding: 12,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 10,
   },
 });
