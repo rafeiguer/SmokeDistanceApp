@@ -188,6 +188,9 @@ export default function App() {
     })();
   }, []);
 
+  // Obter cores do tema atual
+  const colors = getThemeColors(currentTheme);
+
   useEffect(() => {
     let baroListener = null;
 
@@ -316,8 +319,6 @@ export default function App() {
 
   // PÁGINA 1: Câmera
   if (page === 1) {
-    const colors = getThemeColors(currentTheme);
-    
     // Componente de indicador de sinal
     const SignalIndicator = () => (
       <View style={[styles.signalContainer, { backgroundColor: colors.surface }]}>
