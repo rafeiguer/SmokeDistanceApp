@@ -406,7 +406,7 @@ export default function App() {
                 onPress={() => setCameraActive(true)} 
                 style={styles.toggleCameraBtn}
             >
-                <Text style={styles.btnTextSmall}>📷 Ligar Câmera</Text>
+                <Text style={styles.btnTextSmall}>Ligar Câmera</Text>
             </TouchableOpacity>
 
             {/* Botão travar fumaça também no mapa */}
@@ -423,7 +423,7 @@ export default function App() {
                   onPress={() => openInGoogleMaps(pickedPoint.latitude, pickedPoint.longitude)} 
                   style={styles.googleMapsBtn}
               >
-                  <Text style={styles.btnText}>🗺️ Abrir no Google Maps</Text>
+                  <Text style={styles.btnText}>Abrir no Google Maps</Text>
               </TouchableOpacity>
             )}
           </View>
