@@ -803,97 +803,103 @@ Elevação: ${singleObs.elevacao}°
   }
 
   return (
-    <ScrollView style={styles.page2Container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>SmokeDistance — medir distância da fumaça</Text>
+    <ScrollView style={[styles.page2Container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { backgroundColor: colors.primary }]}>
+        <Text style={[styles.headerTitle, { color: '#fff' }]}>SmokeDistance — medir distância da fumaça</Text>
       </View>
 
       {/* Abas */}
-      <View style={styles.tabContainer}>
+      <View style={[styles.tabContainer, { backgroundColor: colors.surface }]}>
         <TouchableOpacity 
-          style={[styles.tab, activeTab === 'triangulacao' && styles.tabActive]}
+          style={[styles.tab, activeTab === 'triangulacao' && styles.tabActive, activeTab === 'triangulacao' && { borderBottomColor: colors.primary }]}
           onPress={() => setActiveTab('triangulacao')}
         >
-          <Text style={[styles.tabText, activeTab === 'triangulacao' && styles.tabTextActive]}>Triangulação</Text>
+          <Text style={[styles.tabText, activeTab === 'triangulacao' && styles.tabTextActive, activeTab === 'triangulacao' && { color: colors.primary }]}>Triangulação</Text>
         </TouchableOpacity>
         
         <TouchableOpacity 
-          style={[styles.tab, activeTab === 'single' && styles.tabActive]}
+          style={[styles.tab, activeTab === 'single' && styles.tabActive, activeTab === 'single' && { borderBottomColor: colors.primary }]}
           onPress={() => setActiveTab('single')}
         >
-          <Text style={[styles.tabText, activeTab === 'single' && styles.tabTextActive]}>1 observador (elevação)</Text>
+          <Text style={[styles.tabText, activeTab === 'single' && styles.tabTextActive, activeTab === 'single' && { color: colors.primary }]}>1 observador (elevação)</Text>
         </TouchableOpacity>
         
         <TouchableOpacity 
-          style={[styles.tab, activeTab === 'mapa' && styles.tabActive]}
+          style={[styles.tab, activeTab === 'mapa' && styles.tabActive, activeTab === 'mapa' && { borderBottomColor: colors.primary }]}
           onPress={() => setActiveTab('mapa')}
         >
-          <Text style={[styles.tabText, activeTab === 'mapa' && styles.tabTextActive]}>Mapa / linha</Text>
+          <Text style={[styles.tabText, activeTab === 'mapa' && styles.tabTextActive, activeTab === 'mapa' && { color: colors.primary }]}>Mapa / linha</Text>
         </TouchableOpacity>
       </View>
 
       {/* Conteúdo da aba Triangulação */}
       {activeTab === 'triangulacao' && (
-        <View style={styles.content}>
-          <Text style={styles.sectionTitle}>Triangulação — insira duas observações</Text>
+        <View style={[styles.content, { backgroundColor: colors.background }]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Triangulação — insira duas observações</Text>
           
-          <View style={styles.observerCard}>
-            <Text style={styles.observerLabel}>Observador 1 (lat, lon, azimute°)</Text>
+          <View style={[styles.observerCard, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.observerLabel, { color: colors.text }]}>Observador 1 (lat, lon, azimute°)</Text>
             <View style={styles.inputRow}>
               <TextInput 
-                style={styles.inputSmall} 
+                style={[styles.inputSmall, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]} 
                 placeholder="Latitude"
+                placeholderTextColor={colors.textSecondary}
                 keyboardType="numeric"
                 value={obs1.lat}
                 onChangeText={(val) => setObs1({...obs1, lat: val})}
               />
               <TextInput 
-                style={styles.inputSmall} 
+                style={[styles.inputSmall, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]} 
                 placeholder="Longitude"
+                placeholderTextColor={colors.textSecondary}
                 keyboardType="numeric"
                 value={obs1.lon}
                 onChangeText={(val) => setObs1({...obs1, lon: val})}
               />
               <TextInput 
-                style={styles.inputSmall} 
+                style={[styles.inputSmall, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]} 
                 placeholder="Azimute"
+                placeholderTextColor={colors.textSecondary}
                 keyboardType="numeric"
                 value={obs1.azimute}
                 onChangeText={(val) => setObs1({...obs1, azimute: val})}
               />
             </View>
             <TouchableOpacity 
-              style={styles.btnFill}
+              style={[styles.btnFill, { backgroundColor: colors.surface, borderColor: colors.border }]}
               onPress={() => location && setObs1({
                 lat: location.latitude.toFixed(6),
                 lon: location.longitude.toFixed(6),
                 azimute: sensorData.orientation?.toFixed(1) || ''
               })}
             >
-              <Text style={styles.btnFillText}>📍 Usar Posição Atual</Text>
+              <Text style={[styles.btnFillText, { color: colors.primary }]}>Usar Posição Atual</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.observerCard}>
-            <Text style={styles.observerLabel}>Observador 2 (lat, lon, azimute°)</Text>
+          <View style={[styles.observerCard, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.observerLabel, { color: colors.text }]}>Observador 2 (lat, lon, azimute°)</Text>
             <View style={styles.inputRow}>
               <TextInput 
-                style={styles.inputSmall} 
+                style={[styles.inputSmall, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]} 
                 placeholder="Latitude"
+                placeholderTextColor={colors.textSecondary}
                 keyboardType="numeric"
                 value={obs2.lat}
                 onChangeText={(val) => setObs2({...obs2, lat: val})}
               />
               <TextInput 
-                style={styles.inputSmall} 
+                style={[styles.inputSmall, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]} 
                 placeholder="Longitude"
+                placeholderTextColor={colors.textSecondary}
                 keyboardType="numeric"
                 value={obs2.lon}
                 onChangeText={(val) => setObs2({...obs2, lon: val})}
               />
               <TextInput 
-                style={styles.inputSmall} 
+                style={[styles.inputSmall, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]} 
                 placeholder="Azimute"
+                placeholderTextColor={colors.textSecondary}
                 keyboardType="numeric"
                 value={obs2.azimute}
                 onChangeText={(val) => setObs2({...obs2, azimute: val})}
@@ -901,34 +907,34 @@ Elevação: ${singleObs.elevacao}°
             </View>
           </View>
 
-          <TouchableOpacity style={styles.btnPrimary} onPress={calculateIntersection}>
-            <Text style={styles.btnText}>🎯 Calcular interseção</Text>
+          <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: colors.primary }]} onPress={calculateIntersection}>
+            <Text style={[styles.btnText, { color: '#fff' }]}>Calcular Interseção</Text>
           </TouchableOpacity>
 
           {intersection && (
-            <View style={styles.resultCard}>
-              <Text style={styles.resultTitle}>✅ Resultado da Triangulação</Text>
-              <Text style={styles.resultText}>📍 Latitude: {intersection.latitude.toFixed(6)}°</Text>
-              <Text style={styles.resultText}>📍 Longitude: {intersection.longitude.toFixed(6)}°</Text>
-              <Text style={styles.resultText}>📏 Distância Obs1: {intersection.distObs1.toFixed(1)} m ({(intersection.distObs1/1000).toFixed(2)} km)</Text>
-              <Text style={styles.resultText}>📏 Distância Obs2: {intersection.distObs2.toFixed(1)} m ({(intersection.distObs2/1000).toFixed(2)} km)</Text>
+            <View style={[styles.resultCard, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.resultTitle, { color: colors.success }]}>Resultado da Triangulação</Text>
+              <Text style={[styles.resultText, { color: colors.text }]}>Latitude: {intersection.latitude.toFixed(6)}°</Text>
+              <Text style={[styles.resultText, { color: colors.text }]}>Longitude: {intersection.longitude.toFixed(6)}°</Text>
+              <Text style={[styles.resultText, { color: colors.text }]}>Distância Obs1: {intersection.distObs1.toFixed(1)} m ({(intersection.distObs1/1000).toFixed(2)} km)</Text>
+              <Text style={[styles.resultText, { color: colors.text }]}>Distância Obs2: {intersection.distObs2.toFixed(1)} m ({(intersection.distObs2/1000).toFixed(2)} km)</Text>
               
               <View style={styles.resultButtons}>
                 <TouchableOpacity 
-                  style={styles.btnCopy}
+                  style={[styles.btnCopy, { backgroundColor: colors.primary }]}
                   onPress={async () => {
                     await Clipboard.setStringAsync(`${intersection.latitude.toFixed(6)}, ${intersection.longitude.toFixed(6)}`);
-                    Alert.alert("✅", "Coordenadas copiadas!");
+                    Alert.alert("Sucesso", "Coordenadas copiadas!");
                   }}
                 >
-                  <Text style={styles.btnCopyText}>📋 Copiar Coordenadas</Text>
+                  <Text style={styles.btnCopyText}>Copiar Coordenadas</Text>
                 </TouchableOpacity>
                 
                 <TouchableOpacity 
-                  style={styles.btnMaps}
+                  style={[styles.btnMaps, { backgroundColor: colors.primary }]}
                   onPress={() => openInGoogleMaps(intersection.latitude, intersection.longitude)}
                 >
-                  <Text style={styles.btnCopyText}>🗺️ Ver no Maps</Text>
+                  <Text style={styles.btnCopyText}>Ver no Maps</Text>
                 </TouchableOpacity>
               </View>
             </View>
