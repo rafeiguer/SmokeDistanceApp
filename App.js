@@ -484,7 +484,14 @@ export default function App() {
 
   // PÁGINA 2: Triangulação e Relatórios
   if (page === 2) {
-    return <Page2 location={location} baroAltitude={baroAltitude} sensorData={sensorData} meteoData={meteoData} setPage={setPage} openInGoogleMaps={openInGoogleMaps} mapType={mapType} colors={colors} />;
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+        <Text style={{ color: colors.text, fontSize: 18 }}>Página 2 - Triangulação</Text>
+        <TouchableOpacity onPress={() => setPage(1)} style={{ marginTop: 20, backgroundColor: colors.primary, padding: 10, borderRadius: 5 }}>
+          <Text style={{ color: '#fff' }}>Voltar</Text>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
   // PÁGINA 3: Configurações
@@ -741,7 +748,8 @@ export default function App() {
   }
 }
 
-// COMPONENTE PÁGINA 2
+// COMPONENTE PÁGINA 2 (Removido - implementado inline em App())
+/* REMOVIDO
 function Page2({ location, baroAltitude, sensorData, meteoData, setPage, openInGoogleMaps, mapType, colors }) {
   const [activeTab, setActiveTab] = useState('triangulacao');
   
@@ -1353,6 +1361,7 @@ Elevação: ${singleObs.elevacao}°
     </ScrollView>
   );
 }
+*/
 
 // ESTILOS
 const styles = StyleSheet.create({
