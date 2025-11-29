@@ -1,0 +1,10 @@
+# Protect App.js from auto-editing
+App.js diff=binary merge=binary
+*.js diff=binary merge=binary
+
+# UTF-8 encoding for all text files
+*.js text eol=lf encoding=UTF-8
+*.json text eol=lf encoding=UTF-8
+*.jsx text eol=lf encoding=UTF-8
+*.tsx text eol=lf encoding=UTF-8
+*.ts text eol=lf encoding=UTF-8

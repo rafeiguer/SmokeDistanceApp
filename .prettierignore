@@ -1,0 +1,9 @@
+# Don't auto-format App.js
+App.js
+
+# Ignore node_modules
+node_modules/
+
+# Ignore build directories
+*.ios.js
+*.android.js
