@@ -459,7 +459,7 @@ export default function App() {
 
   // PÁGINA 2: Triangulação e Relatórios
   if (page === 2) {
-    return <Page2 location={location} baroAltitude={baroAltitude} sensorData={sensorData} meteoData={meteoData} setPage={setPage} openInGoogleMaps={openInGoogleMaps} mapType={mapType} />;
+    return <Page2 location={location} baroAltitude={baroAltitude} sensorData={sensorData} meteoData={meteoData} setPage={setPage} openInGoogleMaps={openInGoogleMaps} mapType={mapType} colors={colors} />;
   }
 
   // PÁGINA 3: Configurações
@@ -588,7 +588,7 @@ export default function App() {
 }
 
 // COMPONENTE PÁGINA 2
-function Page2({ location, baroAltitude, sensorData, meteoData, setPage, openInGoogleMaps, mapType }) {
+function Page2({ location, baroAltitude, sensorData, meteoData, setPage, openInGoogleMaps, mapType, colors }) {
   const [activeTab, setActiveTab] = useState('triangulacao');
   
   // Estados para triangulação
