@@ -16,6 +16,7 @@ import { getDb } from './src/firebase';
 const R = 6371000;
 const deg2rad = Math.PI / 180;
 let sfSeq = 0; // sequência para IDs únicos simulados
+const AUTO_BOUNCE_INTERVAL_MS = 15000; // no máximo 1 bounce a cada 15s
 
 const SafeOps = {
   parseNumber: (value, fallback = 0) => {
@@ -620,6 +621,8 @@ function geoToCartesian(lat, lon, alt, originLat, originLon, originAlt) {
   }
 
 export default function App() {
+  const mapRef = useRef(null);
+  const lastAutoBounceRef = useRef(0);
   const [page, setPage] = useState(1);
   const [smokeHeight, setSmokeHeight] = useState('100');
   const [pickedPoint, setPickedPoint] = useState(null);
@@ -688,6 +691,12 @@ export default function App() {
   const [lastSatUpdate, setLastSatUpdate] = useState(null);
   const [communityPings, setCommunityPings] = useState([]); // Pings da comunidade (Firestore)
   const [showCommunityPings, setShowCommunityPings] = useState(false);
+  const [followUser, setFollowUser] = useState(true);
+  const [currentRegion, setCurrentRegion] = useState(null);
+  const [needsRecenter, setNeedsRecenter] = useState(false);
+  const [recenterVisible, setRecenterVisible] = useState(false);
+  const recenterDelayRef = useRef(null);
+  const recenterAutoHideRef = useRef(null);
 
   // Valor seguro para evitar undefined
   const safeInputsManualFoco = inputsManualFoco || {
@@ -1107,14 +1116,17 @@ export default function App() {
     let watcher = null;
     (async () => {
       try {
-        const perm = await Location.getForegroundPermissionsAsync();
-        if (!perm.granted) return;
+        let perm = await Location.getForegroundPermissionsAsync();
+        if (!perm.granted) {
+          perm = await Location.requestForegroundPermissionsAsync();
+          if (!perm.granted) return;
+        }
         // Inicia watcher com intervalo por distância ou tempo
         watcher = await Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.Balanced,
-            distanceInterval: 2, // atualiza a cada ~2 metros
-            timeInterval: 2000   // ou a cada 2s (fallback)
+            accuracy: Location.Accuracy.Highest,
+            distanceInterval: 1,
+            timeInterval: 1500
           },
           (pos) => {
             if (pos?.coords) {
@@ -1124,6 +1136,44 @@ export default function App() {
                 const moved = Math.abs(prev.latitude - pos.coords.latitude) > 0.000005 || Math.abs(prev.longitude - pos.coords.longitude) > 0.000005;
                 return moved ? pos.coords : prev;
               });
+              // Auto-centralizar câmera se habilitado
+              if (followUser && mapRef?.current) {
+                const reg = {
+                  latitude: pos.coords.latitude,
+                  longitude: pos.coords.longitude,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
+                };
+                try { mapRef.current.animateToRegion(reg, 500); } catch {}
+                setNeedsRecenter(false);
+                setRecenterVisible(false);
+              } else if (!followUser && mapRef?.current && currentRegion) {
+                // Bounce de segurança: se usuário saiu muito do quadro, recenter suavemente
+                const metersPerDegLat = 111000;
+                const metersPerDegLon = 111000 * Math.cos((currentRegion.latitude * Math.PI) / 180);
+                const halfHeightM = (currentRegion.latitudeDelta || 0.02) * metersPerDegLat * 0.5;
+                const halfWidthM = (currentRegion.longitudeDelta || 0.02) * metersPerDegLon * 0.5;
+                const limit = Math.max(Math.min(halfHeightM, halfWidthM) * 0.8, 500);
+                const dist = calculateDistanceHaversine(
+                  currentRegion.latitude,
+                  currentRegion.longitude,
+                  pos.coords.latitude,
+                  pos.coords.longitude
+                );
+                const now = Date.now();
+                const isFar = dist > Math.max(limit * 1.2, 1200);
+                setNeedsRecenter(isFar);
+                if (dist > limit && now - lastAutoBounceRef.current > AUTO_BOUNCE_INTERVAL_MS) {
+                  lastAutoBounceRef.current = now;
+                  const reg2 = {
+                    latitude: pos.coords.latitude,
+                    longitude: pos.coords.longitude,
+                    latitudeDelta: currentRegion.latitudeDelta || 0.02,
+                    longitudeDelta: currentRegion.longitudeDelta || 0.02,
+                  };
+                  try { mapRef.current.animateToRegion(reg2, 600); } catch {}
+                }
+              }
             }
           }
         );
@@ -1133,6 +1183,53 @@ export default function App() {
     })();
     return () => {
       try { if (watcher) watcher.remove(); } catch {}
+    };
+  }, [followUser, currentRegion]);
+
+  function handleRecenter() {
+    if (!location || !mapRef?.current) return;
+    const reg = {
+      latitude: location.latitude,
+      longitude: location.longitude,
+      latitudeDelta: currentRegion?.latitudeDelta || 0.01,
+      longitudeDelta: currentRegion?.longitudeDelta || 0.01,
+    };
+    try { mapRef.current.animateToRegion(reg, 400); } catch {}
+    setNeedsRecenter(false);
+    setRecenterVisible(false);
+    if (recenterDelayRef.current) { clearTimeout(recenterDelayRef.current); recenterDelayRef.current = null; }
+    if (recenterAutoHideRef.current) { clearTimeout(recenterAutoHideRef.current); recenterAutoHideRef.current = null; }
+  }
+
+  useEffect(() => {
+    // Controla a exibição do botão: delay para aparecer e auto-esconde
+    if (followUser) {
+      setRecenterVisible(false);
+      if (recenterDelayRef.current) { clearTimeout(recenterDelayRef.current); recenterDelayRef.current = null; }
+      if (recenterAutoHideRef.current) { clearTimeout(recenterAutoHideRef.current); recenterAutoHideRef.current = null; }
+      return;
+    }
+    if (needsRecenter) {
+      if (recenterDelayRef.current) { clearTimeout(recenterDelayRef.current); }
+      recenterDelayRef.current = setTimeout(() => {
+        setRecenterVisible(true);
+        if (recenterAutoHideRef.current) { clearTimeout(recenterAutoHideRef.current); }
+        recenterAutoHideRef.current = setTimeout(() => {
+          setRecenterVisible(false);
+        }, 7000); // auto-esconde após ~7s
+      }, 2000); // atraso de ~2s antes de mostrar
+    } else {
+      setRecenterVisible(false);
+      if (recenterDelayRef.current) { clearTimeout(recenterDelayRef.current); recenterDelayRef.current = null; }
+      if (recenterAutoHideRef.current) { clearTimeout(recenterAutoHideRef.current); recenterAutoHideRef.current = null; }
+    }
+  }, [needsRecenter, followUser]);
+
+  useEffect(() => {
+    // Limpa timers no unmount
+    return () => {
+      if (recenterDelayRef.current) clearTimeout(recenterDelayRef.current);
+      if (recenterAutoHideRef.current) clearTimeout(recenterAutoHideRef.current);
     };
   }, []);
 
@@ -1847,6 +1944,12 @@ export default function App() {
             {/* Botões de camadas do mapa */}
             <View style={{ flexDirection: 'row', padding: 10, gap: 5, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ddd' }}>
               <TouchableOpacity 
+                style={[styles.mapButton, { flex: 1, backgroundColor: followUser ? '#43A047' : '#999' }]}
+                onPress={() => setFollowUser(!followUser)}
+              >
+                <Text style={styles.buttonText}>{followUser ? '🎯 Seguindo' : '🎯 Seguir'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
                 style={[styles.mapButton, { flex: 1, backgroundColor: showSatelliteOverlay ? '#E53935' : '#999' }]}
                 onPress={async () => {
                   if (!showSatelliteOverlay && satelliteFocos.length === 0) {
@@ -1880,17 +1983,34 @@ export default function App() {
               </TouchableOpacity>
             </View>
 
-            <MapView
-              provider="google"
-              style={[styles.map, { height: 500 }]}
-              mapType={mapaCamera || initialMapType}
-              initialRegion={{
-                latitude: location.latitude,
-                longitude: location.longitude,
-                latitudeDelta: initialDelta,
-                longitudeDelta: initialDelta,
-              }}
-              onPress={(e) => {
+            <View style={{ position: 'relative', height: 500 }}>
+              <MapView
+                provider="google"
+                ref={mapRef}
+                style={[styles.map, { height: 500 }]}
+                mapType={mapaCamera || initialMapType}
+                initialRegion={{
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                  latitudeDelta: initialDelta,
+                  longitudeDelta: initialDelta,
+                }}
+                onRegionChangeComplete={(r) => {
+                  setCurrentRegion(r);
+                  if (!followUser && location) {
+                    const dist = calculateDistanceHaversine(r.latitude, r.longitude, location.latitude, location.longitude);
+                    const metersPerDegLat = 111000;
+                    const metersPerDegLon = 111000 * Math.cos((r.latitude * Math.PI) / 180);
+                    const halfHeightM = (r.latitudeDelta || 0.02) * metersPerDegLat * 0.5;
+                    const halfWidthM = (r.longitudeDelta || 0.02) * metersPerDegLon * 0.5;
+                    const limit = Math.max(Math.min(halfHeightM, halfWidthM) * 0.8, 500);
+                    const isFar = dist > Math.max(limit * 1.2, 1200);
+                    setNeedsRecenter(isFar);
+                  } else {
+                    setNeedsRecenter(false);
+                  }
+                }}
+                onPress={(e) => {
                 const { latitude, longitude } = e.nativeEvent.coordinate;
 
                 if (marcandoFocoMapa) {
@@ -1949,7 +2069,7 @@ export default function App() {
                   Alert.alert('✅ Marcado', 'Poço de água adicionado ao mapa!');
                 }
               }}
-            >
+              >
               {/* 🔥 FIRMS WMS Overlay (via MAP KEY) */}
               {showSatelliteOverlay && FIRMS_MAP_KEY ? (
                 <WMSTile
@@ -2293,7 +2413,16 @@ export default function App() {
                   />
                 );
               })}
-            </MapView>
+              </MapView>
+              {!followUser && recenterVisible && (
+                <TouchableOpacity
+                  onPress={handleRecenter}
+                  style={{ position: 'absolute', right: 12, bottom: 12, backgroundColor: 'rgba(139,92,42,0.85)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18, elevation: 3 }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }}>🎯 Centralizar</Text>
+                </TouchableOpacity>
+              )}
+            </View>
 
             {/* Mini Bussola no Mapa */}
             <TouchableOpacity 
