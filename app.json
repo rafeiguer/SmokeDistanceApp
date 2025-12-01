@@ -34,7 +34,8 @@
     "extra": {
       "eas": {
         "projectId": "58e7e5fc-b648-498b-8944-872d48e10237"
-      }
+      },
+      "GRAPH_HOPPER_API_KEY": "6e7e76e1-7e59-40a6-8352-c34c8f1dc0d6"
     },
     "runtimeVersion": {
       "policy": "appVersion"
