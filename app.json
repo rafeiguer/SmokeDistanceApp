@@ -35,7 +35,20 @@
       "eas": {
         "projectId": "58e7e5fc-b648-498b-8944-872d48e10237"
       },
-      "GRAPH_HOPPER_API_KEY": "6e7e76e1-7e59-40a6-8352-c34c8f1dc0d6"
+      "GRAPH_HOPPER_API_KEY": "6e7e76e1-7e59-40a6-8352-c34c8f1dc0d6",
+      "FIRMS_MAP_KEY": "10513266d2b268366c331cb1ce366ece",
+      "FIRMS_URL": "",
+      "FIRMS_TOKEN": "",
+      "GOES_URL": "",
+      "MSG_URL": "",
+      "FIREBASE_CONFIG": {
+        "apiKey": "AIzaSyCOkRqLXPUhMWXvWymnt1YglcL7nxybZ0I",
+        "authDomain": "smokedistance-1165e.firebaseapp.com",
+        "projectId": "smokedistance-1165e",
+        "storageBucket": "smokedistance-1165e.firebasestorage.app",
+        "messagingSenderId": "1056114990454",
+        "appId": "1:1056114990454:web:57b36b23ce4ab34833ae57"
+      }
     },
     "runtimeVersion": {
       "policy": "appVersion"

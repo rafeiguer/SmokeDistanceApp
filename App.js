@@ -2,16 +2,20 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, KeyboardAvoidingView, Platform, Linking } from "react-native";
 import * as Location from "expo-location";
-import MapView, { Marker, Polyline } from "react-native-maps";
+import MapView, { Marker, Polyline, Circle, WMSTile } from "react-native-maps";
 import NetInfo from "@react-native-community/netinfo";
 import * as ImagePicker from "expo-image-picker";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Accelerometer } from "expo-sensors";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
+import { registerForPushNotificationsAsync } from './src/notifications';
+import { getDb } from './src/firebase';
 
 // Constantes
 const R = 6371000;
 const deg2rad = Math.PI / 180;
+let sfSeq = 0; // sequência para IDs únicos simulados
 
 const SafeOps = {
   parseNumber: (value, fallback = 0) => {
@@ -328,6 +332,141 @@ function calculateDistanceHaversine(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+// 🛰️ Focos por satélite (simulados – pode conectar à FIRMS/INPE depois)
+async function fetchSatelliteFiresAround(lat, lon) {
+  const rand = (min, max) => Math.random() * (max - min) + min;
+  const ts = Date.now();
+  const build = (n) => Array.from({ length: n }).map(() => {
+    const latitude = lat + rand(-0.12, 0.12);
+    const longitude = lon + rand(-0.12, 0.12);
+    const id = `sf-${ts}-${sfSeq++}-${Math.round(latitude * 1e6)}-${Math.round(longitude * 1e6)}`;
+    return {
+      id,
+      latitude,
+      longitude,
+      origem: 'Satélite',
+      intensidade: ['Baixa','Média','Alta'][Math.floor(Math.random() * 3)],
+      hora: new Date().toLocaleTimeString('pt-BR'),
+    };
+  });
+  return [...build(3), ...build(3), ...build(4)];
+}
+
+// 🚦 Lê configurações (tokens/URLs) do app.json
+const extra = (Constants?.expoConfig?.extra) || (Constants?.manifest?.extra) || {};
+const FIRMS_MAP_KEY = (extra?.FIRMS_MAP_KEY || '').trim();
+
+// 🔗 Tentar FIRMS configurado via URL/TOKEN do extra
+async function tryFetchFIRMSConfigured(bbox) {
+  const url = (extra?.FIRMS_URL || '').trim();
+  if (!url) return [];
+  let finalUrl = url;
+  if (extra?.FIRMS_TOKEN && !finalUrl.includes('token=')) {
+    const sep = finalUrl.includes('?') ? '&' : '?';
+    finalUrl = `${finalUrl}${sep}token=${encodeURIComponent(extra.FIRMS_TOKEN)}`;
+  }
+  try {
+    const res = await fetch(finalUrl);
+    if (!res.ok) return [];
+    const isJSON = (res.headers.get('content-type') || '').includes('application/json');
+    const text = await res.text();
+    const geo = isJSON ? JSON.parse(text) : JSON.parse(text); // tenta JSON de qualquer forma
+    const feats = geo?.features || [];
+    const out = [];
+    feats.forEach((f) => {
+      const [lon, lat] = f.geometry?.coordinates || [];
+      if (typeof lat === 'number' && typeof lon === 'number') {
+        const p = { latitude: lat, longitude: lon };
+        if (!bbox || insideBBox(p, bbox)) {
+          const props = f.properties || {};
+          out.push({
+            id: `firmscfg-${props?.acq_date || ''}-${props?.acq_time || ''}-${lon?.toFixed?.(4)}${lat?.toFixed?.(4)}`,
+            latitude: lat,
+            longitude: lon,
+            origem: 'FIRMS',
+            intensidade: props.confidence || props.brightness || 'N/D',
+            hora: props.acq_time ? String(props.acq_time) : 'N/D',
+            tempK: props.bright_ti4 || props.brightness || null,
+          });
+        }
+      }
+    });
+    return out;
+  } catch (e) {
+    return [];
+  }
+}
+
+// 🔲 BBOX simples ao redor de um ponto (km)
+function makeBBox(lat, lon, km = 100) {
+  const dLat = km / 111;
+  const dLon = km / (111 * Math.cos((lat * Math.PI) / 180));
+  return {
+    minLat: lat - dLat,
+    minLon: lon - dLon,
+    maxLat: lat + dLat,
+    maxLon: lon + dLon,
+  };
+}
+
+function insideBBox(p, bbox) {
+  return (
+    p.latitude >= bbox.minLat &&
+    p.latitude <= bbox.maxLat &&
+    p.longitude >= bbox.minLon &&
+    p.longitude <= bbox.maxLon
+  );
+}
+
+// 🌎 Tentar FIRMS GeoJSON público (sem token). Se falhar, retorna []
+async function tryFetchFIRMSGeoJSON(bbox) {
+  const sources = [
+    // VIIRS NRT América do Sul 24h
+    'https://firms2.modaps.eosdis.nasa.gov/active_fire/latest/viirs-snpp_nrt_South_America_24h.geojson',
+    // MODIS C6.1 América do Sul 24h
+    'https://firms2.modaps.eosdis.nasa.gov/active_fire/latest/MODIS_C6_1_South_America_24h.geojson',
+  ];
+  const results = [];
+  for (const url of sources) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const geo = await res.json();
+      const feats = geo?.features || [];
+      feats.forEach((f) => {
+        const [lon, lat] = f.geometry?.coordinates || [];
+        if (typeof lat === 'number' && typeof lon === 'number') {
+          const p = { latitude: lat, longitude: lon };
+          if (!bbox || insideBBox(p, bbox)) {
+            const props = f.properties || {};
+            results.push({
+              id: `firms-${props?.acq_date || ''}-${props?.acq_time || ''}-${lon.toFixed(4)}${lat.toFixed(4)}`,
+              latitude: lat,
+              longitude: lon,
+              origem: 'FIRMS',
+              intensidade: props.confidence || props.brightness || 'N/D',
+              hora: props.acq_time ? String(props.acq_time) : 'N/D',
+              tempK: props.bright_ti4 || props.brightness || null,
+            });
+          }
+        }
+      });
+    } catch (e) {
+      // ignora fonte que falhar
+    }
+  }
+  return results;
+}
+
+// 🛰️ Placeholder GOES/MSG – retornam [] por padrão (podemos ligar depois)
+async function tryFetchGOES(bbox) {
+  return [];
+}
+async function tryFetchMSG(bbox) {
+  return [];
+}
+
+
 // Converter lat/lon/alt para coordenadas cartesianas (metros a partir de um ponto de origem)
 function geoToCartesian(lat, lon, alt, originLat, originLon, originAlt) {
   const dLat = (lat - originLat) * deg2rad;
@@ -460,6 +599,8 @@ function geoToCartesian(lat, lon, alt, originLat, originLon, originAlt) {
 
     const novosFocos = [...focos, novoFoco];
     setFocos(novosFocos);
+    // Enfileira para backend quando online voltar
+    enqueuePing(novoFoco);
 
     // Calcular triangulação se temos >= 2 focos
     if (novosFocos.length >= 2) {
@@ -496,6 +637,9 @@ export default function App() {
   const [disconnectTime, setDisconnectTime] = useState(null); // Quando perdeu conexão
   const [breadcrumbs, setBreadcrumbs] = useState([]); // Array de marcadores de breadcrumb
   const [lastBreadcrumbLocation, setLastBreadcrumbLocation] = useState(null); // Última localização onde criou breadcrumb
+  // 📶 Círculos de cobertura de sinal
+  const [coverageCenter, setCoverageCenter] = useState(null); // posição quando conectou
+  const [coverageCircles, setCoverageCircles] = useState([]); // círculos persistentes
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraPhoto, setCameraPhoto] = useState(null);
   const [cameraObjectHeight, setCameraObjectHeight] = useState('50');
@@ -520,7 +664,7 @@ export default function App() {
   const [waypointTemporario, setWaypointTemporario] = useState(null); // Waypoint sendo marcado
   const [focoPendente, setFocoPendente] = useState(false); // Se há um foco aguardando salvar
   const [focoSalvoAgora, setFocoSalvoAgora] = useState(false); // Se acabou de salvar
-  const [mapaCamera, setMapaCamera] = useState('standard'); // Tipo de mapa: standard, satellite, terrain
+  const [mapaCamera, setMapaCamera] = useState('hybrid'); // Tipo de mapa: standard, satellite, terrain
   const [trilhasProximas, setTrilhasProximas] = useState([]); // Trilhas encontradas
   const [meteoDataDinamica, setMeteoDataDinamica] = useState({
     temp: '?',
@@ -529,6 +673,21 @@ export default function App() {
     windDirection: '?',
     descricao: 'Carregando...'
   }); // Dados meteorológicos em tempo real
+  // 🛰️ Satélites (focos grátis)
+  const [satelliteFocos, setSatelliteFocos] = useState([]);
+  const [satelliteLoading, setSatelliteLoading] = useState(false);
+  const [showSatelliteOverlay, setShowSatelliteOverlay] = useState(false);
+  const [satellitesInfo, setSatellitesInfo] = useState([
+    { id: 'sat-1', nome: 'Aqua (MODIS)', atualizacao: '≈ 6h', resolucao: '1km', focos: 0 },
+    { id: 'sat-2', nome: 'Terra (MODIS)', atualizacao: '≈ 6h', resolucao: '1km', focos: 0 },
+    { id: 'sat-3', nome: 'Suomi NPP (VIIRS)', atualizacao: '≈ 15min', resolucao: '375m', focos: 0 },
+  ]);
+  const [enableFIRMS, setEnableFIRMS] = useState(true);
+  const [enableGOES, setEnableGOES] = useState(false);
+  const [enableMSG, setEnableMSG] = useState(false);
+  const [lastSatUpdate, setLastSatUpdate] = useState(null);
+  const [communityPings, setCommunityPings] = useState([]); // Pings da comunidade (Firestore)
+  const [showCommunityPings, setShowCommunityPings] = useState(false);
 
   // Valor seguro para evitar undefined
   const safeInputsManualFoco = inputsManualFoco || {
@@ -580,6 +739,8 @@ export default function App() {
 
     const novosFocos = [...focos, novoFoco];
     setFocos(novosFocos);
+    // Enfileira para backend quando online voltar
+    enqueuePing(novoFoco);
     console.log('✅ Foco adicionado:', novoFoco.observadorId);
     
     // Salvar no AsyncStorage de forma assíncrona (sem esperar)
@@ -611,6 +772,139 @@ export default function App() {
     // Mostrar "Salvo!"
     setFocoSalvoAgora(true);
     console.log('✅ Mostrando "Salvo!"');
+  }
+
+  // 🛰️ Carregar focos por satélite próximos
+
+    // 🔔 Registrar push token e salvar no backend (se configurado)
+    useEffect(() => {
+      (async () => {
+        try { await registerForPushNotificationsAsync(); } catch {}
+      })();
+    }, []);
+
+    // 📤 Enfileirar ping para enviar ao backend (offline-first)
+    async function enqueuePing(ping) {
+      try {
+        const key = 'pending_pings';
+        const raw = await AsyncStorage.getItem(key);
+        const arr = raw ? JSON.parse(raw) : [];
+        arr.push(ping);
+        await AsyncStorage.setItem(key, JSON.stringify(arr));
+      } catch {}
+    }
+
+    // 📡 Enviar ping ao Firestore
+    async function sendPingToFirestore(p) {
+      try {
+        const db = getDb();
+        if (!db) return false;
+        const { addDoc, collection, serverTimestamp } = require('firebase/firestore');
+        await addDoc(collection(db, 'pings'), {
+          latitude: p.latitude,
+          longitude: p.longitude,
+          altitude: p.altitude || 0,
+          heading: p.heading || 0,
+          pitch: p.pitch || 0,
+          distancia: p.distancia || 0,
+          timestampLocal: p.timestamp || new Date().toLocaleTimeString(),
+          createdAt: serverTimestamp(),
+        });
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    // 🔄 Drenar fila pendente ao reconectar
+    async function syncPendingPings() {
+      try {
+        const key = 'pending_pings';
+        const raw = await AsyncStorage.getItem(key);
+        const arr = raw ? JSON.parse(raw) : [];
+        if (!arr.length) return;
+        const kept = [];
+        for (const p of arr) {
+          const ok = await sendPingToFirestore(p);
+          if (!ok) kept.push(p);
+        }
+        await AsyncStorage.setItem(key, JSON.stringify(kept));
+      } catch {}
+    }
+
+    // 👥 Assinar pings recentes (filtra por bbox no cliente)
+    useEffect(() => {
+      if (!showCommunityPings) return;
+      const db = getDb();
+      if (!db) return;
+      try {
+        const { collection, query, orderBy, limit, onSnapshot } = require('firebase/firestore');
+        const q = query(collection(db, 'pings'), orderBy('createdAt', 'desc'), limit(200));
+        const unsub = onSnapshot(q, (snap) => {
+          const list = [];
+          snap.forEach((doc) => {
+            const d = doc.data();
+            if (!d || typeof d.latitude !== 'number' || typeof d.longitude !== 'number') return;
+            list.push({ id: doc.id, ...d });
+          });
+          setCommunityPings(list);
+        });
+        return () => unsub && unsub();
+      } catch {}
+    }, [showCommunityPings]);
+  async function loadSatelliteFocos() {
+    if (!location) return;
+    try {
+      setSatelliteLoading(true);
+      const bbox = makeBBox(location.latitude, location.longitude, 150);
+      let all = [];
+      if (enableFIRMS) {
+        // Primeiro tenta FIRMS configurado; se vazio, tenta público
+        let f = await tryFetchFIRMSConfigured(bbox);
+        if (!f || f.length === 0) {
+          f = await tryFetchFIRMSGeoJSON(bbox);
+        }
+        all = all.concat(f);
+      }
+      if (enableGOES) {
+        const g = await tryFetchGOES(bbox);
+        all = all.concat(g);
+      }
+      if (enableMSG) {
+        const m = await tryFetchMSG(bbox);
+        all = all.concat(m);
+      }
+      // Fallback: se nenhuma fonte retornou, usa simulado para não ficar vazio
+      if (all.length === 0) {
+        const sim = await fetchSatelliteFiresAround(location.latitude, location.longitude);
+        all = sim;
+      }
+      // Remover duplicados por id ou por aproximação lat/lon+origem+hora
+      const seen = new Set();
+      const unique = [];
+      for (const x of all) {
+        const key = x.id || `${x.origem || 'UNK'}:${x.hora || ''}:${(x.latitude ?? 0).toFixed(4)},${(x.longitude ?? 0).toFixed(4)}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          unique.push(x);
+        }
+      }
+      setSatelliteFocos(unique);
+      setLastSatUpdate(Date.now());
+      // Atualizar contagem por satélite de forma aproximada
+      const countFIRMS = enableFIRMS ? unique.filter(x => x.origem === 'FIRMS').length : 0;
+      const countGOES = enableGOES ? unique.filter(x => x.origem === 'GOES').length : 0;
+      const countMSG  = enableMSG  ? unique.filter(x => x.origem === 'MSG').length  : 0;
+      setSatellitesInfo([
+        { id: 'sat-1', nome: 'FIRMS (MODIS/VIIRS)', atualizacao: '≈ 15min-6h', resolucao: '375m-1km', focos: countFIRMS },
+        { id: 'sat-2', nome: 'GOES', atualizacao: '≈ 5-15min', resolucao: '2-10km', focos: countGOES },
+        { id: 'sat-3', nome: 'MSG',  atualizacao: '≈ 15min',   resolucao: '3km',    focos: countMSG  },
+      ]);
+    } catch (e) {
+      console.warn('⚠️ Falha cargas satélite:', e?.message);
+    } finally {
+      setSatelliteLoading(false);
+    }
   }
 
   // 📤 PREPARAR DADOS PARA ENVIO ÀS AUTORIDADES
@@ -754,6 +1048,94 @@ export default function App() {
     })();
   }, []);
 
+  // 📥 Carregar círculos de cobertura persistidos
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem('circulos_sinal');
+        if (saved) {
+          const arr = JSON.parse(saved);
+          if (Array.isArray(arr)) setCoverageCircles(arr);
+        }
+      } catch (e) {
+        console.warn('⚠️ Erro ao carregar círculos:', e?.message);
+      }
+    })();
+  }, []);
+
+  const MIN_RADIUS_FOR_CIRCLE = 300; // metros: evita ruído urbano
+
+  async function shouldSkipCircle(edge) {
+    // Heurística simples: se reverse geocode indicar cidade/rua, considerar urbano
+    try {
+      if (!edge) return true;
+      if (!isConnected) return false; // sem rede, não dá pra checar, não pula
+      const res = await Location.reverseGeocodeAsync({
+        latitude: edge.latitude,
+        longitude: edge.longitude,
+      });
+      const info = res && res[0];
+      if (!info) return false;
+      // Se tiver city/locality/street/district preenchidos, tratar como urbano
+      if (info.city || info.subregion || info.district || info.street || info.name) return true;
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function addCoverageCircleIfValid(center, edge) {
+    if (!center || !edge) return;
+    const radius = calculateDistanceHaversine(center.latitude, center.longitude, edge.latitude, edge.longitude);
+    if (!isFinite(radius) || radius <= 0) return;
+    if (radius < MIN_RADIUS_FOR_CIRCLE) return; // muito pequeno, ignora
+    const urban = await shouldSkipCircle(edge);
+    if (urban) return; // evitar áreas urbanas para não sobrecarregar
+    const circle = {
+      id: Date.now(),
+      center: { latitude: center.latitude, longitude: center.longitude },
+      radius,
+      timestamp: Date.now(),
+    };
+    const next = [...coverageCircles, circle];
+    setCoverageCircles(next);
+    try { await AsyncStorage.setItem('circulos_sinal', JSON.stringify(next)); } catch {}
+  }
+
+  // 🚶 Atualizar localização continuamente para o ping seguir o movimento
+  useEffect(() => {
+    let watcher = null;
+    (async () => {
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (!perm.granted) return;
+        // Inicia watcher com intervalo por distância ou tempo
+        watcher = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            distanceInterval: 2, // atualiza a cada ~2 metros
+            timeInterval: 2000   // ou a cada 2s (fallback)
+          },
+          (pos) => {
+            if (pos?.coords) {
+              setLocation(prev => {
+                // Evitar re-render inútil se não mudou nada relevante
+                if (!prev) return pos.coords;
+                const moved = Math.abs(prev.latitude - pos.coords.latitude) > 0.000005 || Math.abs(prev.longitude - pos.coords.longitude) > 0.000005;
+                return moved ? pos.coords : prev;
+              });
+            }
+          }
+        );
+      } catch (err) {
+        console.warn('⚠️ Erro watchPosition:', err.message);
+      }
+    })();
+    return () => {
+      try { if (watcher) watcher.remove(); } catch {}
+    };
+  }, []);
+
   // 💾 Carregar focos salvos ao iniciar o app
   useEffect(() => {
     (async () => {
@@ -810,6 +1192,14 @@ export default function App() {
             setLastKnownLocationBeforeDisconnect(location);
             setDisconnectTime(Date.now()); // Registrar quando desconectou
             setLastBreadcrumbLocation(location); // Inicializar para comparar distância depois
+            // Finalizar círculo de cobertura se houver centro ativo
+            (async () => {
+              try {
+                await addCoverageCircleIfValid(coverageCenter || location, location);
+              } finally {
+                setCoverageCenter(null);
+              }
+            })();
           }
           
           // Se conectando, limpar último localização congelada (mas MANTER breadcrumbs!)
@@ -819,6 +1209,10 @@ export default function App() {
             setDisconnectTime(null);
             // NÃO limpar breadcrumbs - eles ficam permanentes como dados públicos!
             setLastBreadcrumbLocation(null);
+            // Definir centro de cobertura no momento da conexão
+            if (location) setCoverageCenter(location);
+                      // Drenar pings pendentes
+                      (async () => { try { await syncPendingPings(); } catch {} })();
           }
           
           setIsConnected(state.isConnected);
@@ -1414,6 +1808,13 @@ export default function App() {
 
             <TouchableOpacity 
               style={[styles.button, { backgroundColor: '#8B5C2A', borderRadius: 10, padding: 12, alignItems: 'center', elevation: 2, marginBottom: 10 }]}
+              onPress={() => setPage(5)}
+            >
+              <Text style={styles.buttonText}>🛰️ Satélites</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.button, { backgroundColor: '#8B5C2A', borderRadius: 10, padding: 12, alignItems: 'center', elevation: 2, marginBottom: 10 }]}
               onPress={() => setPage(4)}
             >
               <Text style={styles.buttonText}>📤 Compartilhar</Text>
@@ -1432,6 +1833,9 @@ export default function App() {
   }
 
   if (page === 2) {
+    // Definir modo híbrido como inicial e zoom maior
+    const initialMapType = 'hybrid';
+    const initialDelta = 0.025; // Zoom 2x maior
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -1443,10 +1847,15 @@ export default function App() {
             {/* Botões de camadas do mapa */}
             <View style={{ flexDirection: 'row', padding: 10, gap: 5, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ddd' }}>
               <TouchableOpacity 
-                style={[styles.mapButton, { flex: 1, backgroundColor: mapaCamera === 'standard' ? '#2196F3' : '#999' }]}
-                onPress={() => setMapaCamera('standard')}
+                style={[styles.mapButton, { flex: 1, backgroundColor: showSatelliteOverlay ? '#E53935' : '#999' }]}
+                onPress={async () => {
+                  if (!showSatelliteOverlay && satelliteFocos.length === 0) {
+                    await loadSatelliteFocos();
+                  }
+                  setShowSatelliteOverlay(!showSatelliteOverlay);
+                }}
               >
-                <Text style={styles.buttonText}>🗺️ Padrão</Text>
+                <Text style={styles.buttonText}>🔥 Focos por satélite</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
@@ -1472,13 +1881,14 @@ export default function App() {
             </View>
 
             <MapView
+              provider="google"
               style={[styles.map, { height: 500 }]}
-              mapType={mapaCamera}
+              mapType={mapaCamera || initialMapType}
               initialRegion={{
                 latitude: location.latitude,
                 longitude: location.longitude,
-                latitudeDelta: 0.05,
-                longitudeDelta: 0.05,
+                latitudeDelta: initialDelta,
+                longitudeDelta: initialDelta,
               }}
               onPress={(e) => {
                 const { latitude, longitude } = e.nativeEvent.coordinate;
@@ -1540,6 +1950,28 @@ export default function App() {
                 }
               }}
             >
+              {/* 🔥 FIRMS WMS Overlay (via MAP KEY) */}
+              {showSatelliteOverlay && FIRMS_MAP_KEY ? (
+                <WMSTile
+                  urlTemplate={`https://firms.modaps.eosdis.nasa.gov/wms/?MAP_KEY=${encodeURIComponent(FIRMS_MAP_KEY)}`}
+                  zIndex={0}
+                  opacity={0.6}
+                  tileSize={256}
+                  minimumZ={0}
+                  maximumZ={18}
+                  parameters={{
+                    service: 'WMS',
+                    request: 'GetMap',
+                    version: '1.1.1',
+                    format: 'image/png',
+                    transparent: true,
+                    srs: 'EPSG:3857',
+                    styles: '',
+                    // Camadas comuns do FIRMS (MODIS 24h e VIIRS 24h). Você pode ajustar após validar no GetCapabilities.
+                    layers: 'fires_modis_24,fires_viirs_24',
+                  }}
+                />
+              ) : null}
               {/* Marcador de localização atual */}
               <Marker
                 coordinate={{
@@ -1572,41 +2004,7 @@ export default function App() {
                       <View style={{ width: 2.5, height: 15, backgroundColor: '#FFFFFF', borderRadius: 1.25 }} />
                     </View>
                   </View>
-                ) : (
-                  <View style={{
-                    width: 42,
-                    height: 42,
-                    borderRadius: 21,
-                    backgroundColor: '#000000',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    borderWidth: 2,
-                    borderColor: '#FF6B6B',
-                    shadowColor: '#000000',
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.25,
-                    shadowRadius: 3,
-                    elevation: 5
-                  }}>
-                    <View style={{ position: 'relative', width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}>
-                      {/* Barrinhas em vermelho */}
-                      <View style={{ flexDirection: 'row', gap: 1.5, alignItems: 'flex-end' }}>
-                        <View style={{ width: 2.5, height: 6, backgroundColor: '#FF6B6B', borderRadius: 1.25 }} />
-                        <View style={{ width: 2.5, height: 9, backgroundColor: '#FF6B6B', borderRadius: 1.25 }} />
-                        <View style={{ width: 2.5, height: 12, backgroundColor: '#FF6B6B', borderRadius: 1.25 }} />
-                        <View style={{ width: 2.5, height: 15, backgroundColor: '#FF6B6B', borderRadius: 1.25 }} />
-                      </View>
-                      {/* Risco em cima */}
-                      <View style={{
-                        position: 'absolute',
-                        width: 32,
-                        height: 1.5,
-                        backgroundColor: '#FF6B6B',
-                        transform: [{ rotate: '45deg' }]
-                      }} />
-                    </View>
-                  </View>
-                )}
+                ) : null}
               </Marker>
 
               {/* Marcador congelado (última localização quando rede caiu) */}
@@ -1626,31 +2024,27 @@ export default function App() {
                     backgroundColor: '#000000',
                     justifyContent: 'center',
                     alignItems: 'center',
-                    borderWidth: 2.5,
-                    borderColor: '#FF4444',
-                    shadowColor: '#FF4444',
-                    shadowOffset: { width: 0, height: 3 },
-                    shadowOpacity: 0.6,
-                    shadowRadius: 4,
-                    elevation: 8
+                    borderWidth: 2,
+                    borderColor: '#FFFFFF',
+                    shadowColor: '#000000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.25,
+                    shadowRadius: 3,
+                    elevation: 5
                   }}>
-                    <View style={{ position: 'relative', width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' }}>
-                      {/* Barrinhas em vermelho vibrante - SEM transparência */}
-                      <View style={{ flexDirection: 'row', gap: 1.5, alignItems: 'flex-end' }}>
-                        <View style={{ width: 2.5, height: 6, backgroundColor: '#FF4444', borderRadius: 1.25 }} />
-                        <View style={{ width: 2.5, height: 9, backgroundColor: '#FF4444', borderRadius: 1.25 }} />
-                        <View style={{ width: 2.5, height: 12, backgroundColor: '#FF4444', borderRadius: 1.25 }} />
-                        <View style={{ width: 2.5, height: 15, backgroundColor: '#FF4444', borderRadius: 1.25 }} />
-                      </View>
-                      {/* Risco em cima */}
-                      <View style={{
-                        position: 'absolute',
-                        width: 32,
-                        height: 1.5,
-                        backgroundColor: '#FF4444',
-                        transform: [{ rotate: '45deg' }]
-                      }} />
+                    <View style={{ flexDirection: 'row', gap: 1.5, alignItems: 'flex-end' }}>
+                      <View style={{ width: 2.5, height: 6, backgroundColor: '#FFFFFF', borderRadius: 1.25 }} />
+                      <View style={{ width: 2.5, height: 9, backgroundColor: '#FFFFFF', borderRadius: 1.25 }} />
+                      <View style={{ width: 2.5, height: 12, backgroundColor: '#FFFFFF', borderRadius: 1.25 }} />
+                      <View style={{ width: 2.5, height: 15, backgroundColor: '#FFFFFF', borderRadius: 1.25 }} />
                     </View>
+                    <View style={{
+                      position: 'absolute',
+                      width: 32,
+                      height: 1.5,
+                      backgroundColor: '#FF4444',
+                      transform: [{ rotate: '45deg' }]
+                    }} />
                   </View>
                 </Marker>
               )}
@@ -1664,9 +2058,68 @@ export default function App() {
                   }}
                   title={networkMarker.title}
                   description={networkMarker.description}
-                  pinColor="#000000"
-                />
+                >
+                  <View style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: 21,
+                    backgroundColor: '#000000',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderWidth: 2,
+                    borderColor: '#FFFFFF',
+                    shadowColor: '#000000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.25,
+                    shadowRadius: 3,
+                    elevation: 5
+                  }}>
+                    <View style={{ flexDirection: 'row', gap: 1.5, alignItems: 'flex-end' }}>
+                      <View style={{ width: 2.5, height: 6, backgroundColor: '#FFFFFF', borderRadius: 1.25 }} />
+                      <View style={{ width: 2.5, height: 9, backgroundColor: '#FFFFFF', borderRadius: 1.25 }} />
+                      <View style={{ width: 2.5, height: 12, backgroundColor: '#FFFFFF', borderRadius: 1.25 }} />
+                      <View style={{ width: 2.5, height: 15, backgroundColor: '#FFFFFF', borderRadius: 1.25 }} />
+                    </View>
+                  </View>
+                </Marker>
               )}
+
+              {/* 🔥 Focos por Satélite (overlay) */}
+                            {showCommunityPings && communityPings
+                              .filter(p => location ? calculateDistanceHaversine(location.latitude, location.longitude, p.latitude, p.longitude) <= 200000 : true)
+                              .map((p) => (
+                                <Marker
+                                  key={p.id}
+                                  coordinate={{ latitude: p.latitude, longitude: p.longitude }}
+                                  title={`👥 Ping de observador`}
+                                  description={`Lat: ${p.latitude?.toFixed?.(4)}\nLon: ${p.longitude?.toFixed?.(4)}\nDist: ${p.distancia ? `${Number(p.distancia).toFixed(1)}m` : 'N/D'}`}
+                                >
+                                  <View style={{ width: 16, height: 16, backgroundColor: '#43A047', borderRadius: 8, borderWidth: 2, borderColor: '#fff' }} />
+                                </Marker>
+                              ))}
+              {showSatelliteOverlay && satelliteFocos.map((f) => (
+                <Marker
+                  key={f.id}
+                  coordinate={{ latitude: f.latitude, longitude: f.longitude }}
+                  title={`🔥 Foco Satélite (${f.origem || 'N/D'})`}
+                  description={`Intensidade: ${f.intensidade}\nHora: ${f.hora}${f.tempK ? `\nTemp brilho: ${Math.round(f.tempK)} K` : ''}`}
+                >
+                  <Text style={{ fontSize: 28 }}>🔥</Text>
+                </Marker>
+              ))}
+
+              {/* 📶 Círculos de cobertura persistentes */}
+              {coverageCircles.map((c) => (
+                <Circle
+                  key={c.id}
+                  center={{ latitude: c.center.latitude, longitude: c.center.longitude }}
+                  radius={c.radius}
+                  strokeWidth={2}
+                  strokeColor="rgba(0, 150, 255, 0.9)"
+                  fillColor="rgba(0, 150, 255, 0.15)"
+                  zIndex={1}
+                />
+              ))}
 
               {/* 🍞 Breadcrumbs - Migalhas de sinal deixadas durante viagem sem rede */}
               {breadcrumbs.map((breadcrumb) => (
@@ -2237,6 +2690,83 @@ export default function App() {
           style={styles.buttonPrimary}
           onPress={() => setPage(1)}
         >
+          <Text style={styles.buttonText}>← Voltar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // 🛰️ PÁGINA 5: SATÉLITES (grátis)
+  if (page === 5) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>🛰️ Satélites (grátis)</Text>
+        </View>
+        <ScrollView style={styles.content}>
+          <View style={[styles.card, { backgroundColor: '#E3F2FD', borderLeftWidth: 4, borderLeftColor: '#2196F3' }]}>
+            <Text style={[styles.cardTitle, { color: '#0D47A1' }]}>Camada de Focos por Satélite</Text>
+            <Text style={styles.text}>
+              Esta página lista os 3 satélites gratuitos e permite atualizar os focos próximos da sua região. No mapa (Página 2),
+              o botão "🔥 Focos por satélite" alterna a visualização desses focos.
+            </Text>
+          </View>
+
+          <View style={[styles.card, { backgroundColor: '#FFF' }]}> 
+            <Text style={[styles.cardTitle, { color: '#263238' }]}>Fontes ativas</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+              <TouchableOpacity
+                style={[styles.mapButton, { backgroundColor: enableFIRMS ? '#2E7D32' : '#9E9E9E' }]}
+                onPress={() => setEnableFIRMS(!enableFIRMS)}
+              >
+                <Text style={styles.buttonText}>FIRMS</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.mapButton, { backgroundColor: enableGOES ? '#2E7D32' : '#9E9E9E' }]}
+                onPress={() => setEnableGOES(!enableGOES)}
+              >
+                <Text style={styles.buttonText}>GOES</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.mapButton, { backgroundColor: enableMSG ? '#2E7D32' : '#9E9E9E' }]}
+                onPress={() => setEnableMSG(!enableMSG)}
+              >
+                <Text style={styles.buttonText}>MSG</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.text, { marginTop: 8, fontSize: 12, color: '#555' }]}>Última atualização: {lastSatUpdate ? new Date(lastSatUpdate).toLocaleTimeString('pt-BR') : '—'}</Text>
+          </View>
+
+          {satellitesInfo.map((s) => (
+            <View key={s.id} style={[styles.card, { backgroundColor: '#FAFAFA' }]}>
+              <Text style={[styles.cardTitle, { color: '#263238' }]}>{s.nome}</Text>
+              <Text style={styles.text}>Atualização: {s.atualizacao}</Text>
+              <Text style={styles.text}>Resolução: {s.resolucao}</Text>
+              <Text style={styles.text}>Focos carregados (aprox.): {s.focos}</Text>
+            </View>
+          ))}
+
+          <TouchableOpacity
+            style={[styles.buttonPrimary, { backgroundColor: '#1976D2', marginBottom: 10 }]}
+            onPress={async () => { await loadSatelliteFocos(); Alert.alert('Satélites', 'Focos atualizados. Abra o mapa na Página 2 e ative a camada.'); }}
+            disabled={satelliteLoading}
+          >
+            <Text style={styles.buttonText}>{satelliteLoading ? 'Atualizando...' : 'Atualizar focos próximos'}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.buttonPrimary, { backgroundColor: showSatelliteOverlay ? '#E53935' : '#8B5C2A' }]}
+            onPress={async () => {
+              if (!showSatelliteOverlay && satelliteFocos.length === 0) await loadSatelliteFocos();
+              setShowSatelliteOverlay(!showSatelliteOverlay);
+              Alert.alert('Camada', !showSatelliteOverlay ? 'Camada ativada. Vá ao mapa (Página 2).' : 'Camada desativada.');
+            }}
+          >
+            <Text style={styles.buttonText}>{showSatelliteOverlay ? 'Desativar camada no mapa' : 'Ativar camada no mapa'}</Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        <TouchableOpacity style={styles.buttonPrimary} onPress={() => setPage(1)}>
           <Text style={styles.buttonText}>← Voltar</Text>
         </TouchableOpacity>
       </View>

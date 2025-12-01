@@ -109,6 +109,8 @@ export default function App() {
 
   // UI
   const [satelliteLoading, setSatelliteLoading] = useState(false);
+  const [lastSatelliteUpdate, setLastSatelliteUpdate] = useState(null); // Date string
+  const [autoSatEnabled, setAutoSatEnabled] = useState(true); // atualizar automaticamente quando visível
   const [reportModal, setReportModal] = useState(false);
   const [satPageModal, setSatPageModal] = useState(false);
 
@@ -227,6 +229,7 @@ export default function App() {
       const bounds = region; // use se quiser filtrar por bounding box
       const focos = await fetchSatelliteFires(bounds);
       setSatelliteFocos(focos);
+      setLastSatelliteUpdate(new Date());
       Alert.alert("Satélite", "Focos de satélite carregados.");
     } catch (err) {
       Alert.alert("Satélite", "Não foi possível carregar focos de satélite.");
@@ -240,8 +243,21 @@ export default function App() {
       handleLoadSatelliteFires();
     } else {
       setSatelliteFocos([]);
+      setLastSatelliteUpdate(null);
     }
   }
+
+  // Atualização automática a cada 5 minutos enquanto camada satélite ativa
+  useEffect(() => {
+    if (!autoSatEnabled) return;
+    if (!isConnected) return;
+    if (!satelliteFocos.length) return; // só se camada ativa
+    const interval = setInterval(() => {
+      console.log('⏱️ Atualização automática de focos satélite...');
+      handleLoadSatelliteFires();
+    }, 5 * 60 * 1000); // 5 minutos
+    return () => clearInterval(interval);
+  }, [autoSatEnabled, isConnected, satelliteFocos.length, region]);
 
   function handleAddManualFocoAtCurrent() {
     if (!location) {
@@ -617,6 +633,12 @@ export default function App() {
           <Text style={styles.btnText}>{satelliteFocos.length ? "Ocultar satélite" : "Mostrar satélite"}</Text>
         </TouchableOpacity>
 
+        {satelliteFocos.length > 0 && (
+          <TouchableOpacity style={styles.btnSecondary} onPress={handleLoadSatelliteFires} disabled={satelliteLoading}>
+            <Text style={styles.btnText}>{satelliteLoading ? 'Atualizando...' : 'Atualizar satélite'}</Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity style={styles.btnSecondary} onPress={handleAddManualFocoAtCurrent}>
           <Text style={styles.btnText}>Marcar foco manual</Text>
         </TouchableOpacity>
@@ -645,6 +667,17 @@ export default function App() {
           <Text style={styles.switchLabel}>AI câmera</Text>
           <Switch value={aiEnabled} onValueChange={setAiEnabled} />
         </View>
+        {satelliteFocos.length > 0 && (
+          <View style={{ alignItems: 'center', marginLeft: 8 }}>
+            <Text style={{ fontSize: 10, color: '#333' }}>
+              Última: {lastSatelliteUpdate ? new Date(lastSatelliteUpdate).toLocaleTimeString() : '—'}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+              <Text style={{ fontSize: 10, marginRight: 4, color: '#333' }}>Auto</Text>
+              <Switch value={autoSatEnabled} onValueChange={setAutoSatEnabled} />
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Câmera invisível: usada para captura periódica pela AI */}
