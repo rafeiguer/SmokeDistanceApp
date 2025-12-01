@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, KeyboardAvoidingView, Platform, Linking } from "react-native";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
+import * as IntentLauncher from 'expo-intent-launcher';
 import MapView, { Marker, Polyline, Circle, WMSTile } from "react-native-maps";
 import NetInfo from "@react-native-community/netinfo";
 import * as ImagePicker from "expo-image-picker";
@@ -672,6 +673,7 @@ export default function App() {
   const [mapaCamera, setMapaCamera] = useState('hybrid'); // Tipo de mapa: standard, satellite, terrain
   const [gpsMode, setGpsMode] = useState('normal'); // eco | normal | preciso
   const [bgLocationEnabled, setBgLocationEnabled] = useState(false); // atualizações em segundo plano
+  const [androidBoosted, setAndroidBoosted] = useState(false); // modo 1-toque aplicado
   const [trilhasProximas, setTrilhasProximas] = useState([]); // Trilhas encontradas
   const [meteoDataDinamica, setMeteoDataDinamica] = useState({
     temp: '?',
@@ -1267,6 +1269,41 @@ export default function App() {
       } catch {}
     })();
   }, [bgLocationEnabled, gpsMode]);
+
+  async function ativarModoAndroidAvancado() {
+    try {
+      // 1. Solicitar permissões foreground/background
+      let fg = await Location.getForegroundPermissionsAsync();
+      if (!fg.granted) {
+        fg = await Location.requestForegroundPermissionsAsync();
+        if (!fg.granted) {
+          Alert.alert('Permissão', 'GPS foreground negado');
+          return;
+        }
+      }
+      let bg = await Location.getBackgroundPermissionsAsync();
+      if (!bg.granted) {
+        bg = await Location.requestBackgroundPermissionsAsync();
+      }
+      // 2. Ajustar para modo preciso e fundo
+      setGpsMode('preciso');
+      setBgLocationEnabled(true);
+      // 3. Abrir tela de ignorar otimização de bateria (Android)
+      if (Platform.OS === 'android') {
+        try {
+          await IntentLauncher.startActivityAsync(IntentLauncher.ActivityAction.IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+        } catch (e) {
+          try {
+            await IntentLauncher.startActivityAsync(IntentLauncher.ActivityAction.POWER_USAGE_SUMMARY);
+          } catch {}
+        }
+      }
+      setAndroidBoosted(true);
+      Alert.alert('✅ Otimização Aplicada', 'Modo Preciso + GPS em segundo plano ativados. Ajuste a bateria na tela aberta para não limitar o app.');
+    } catch (e) {
+      Alert.alert('Erro', 'Falha ao aplicar configuração: ' + (e?.message || 'desconhecido'));
+    }
+  }
 
   function handleRecenter() {
     if (!location || !mapRef?.current) return;
@@ -3139,6 +3176,15 @@ export default function App() {
                 </TouchableOpacity>
               </View>
               <Text style={[styles.text, { fontSize: 12, color: '#555', marginTop: 6 }]}>Ative para manter rastreamento mesmo sem Wi‑Fi ou com a tela desligada. No Android, recomenda-se remover otimização de bateria.</Text>
+              <TouchableOpacity
+                style={[styles.mapButton, { marginTop: 10, backgroundColor: androidBoosted ? '#4CAF50' : '#8B5C2A' }]}
+                onPress={ativarModoAndroidAvancado}
+              >
+                <Text style={styles.buttonText}>{androidBoosted ? '✅ Otimização Aplicada' : '⚡ Aplicar tudo (Android)'}</Text>
+              </TouchableOpacity>
+              {Platform.OS === 'android' && androidBoosted && (
+                <Text style={[styles.text, { fontSize: 11, color: '#2E7D32', marginTop: 6 }]}>✔ Modo preciso • ✔ Fundo ativo • Abra a tela de bateria e marque “Sem restrições”.</Text>
+              )}
             </View>
           </View>
 
