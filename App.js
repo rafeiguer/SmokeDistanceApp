@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, KeyboardAvoidingView, Platform, Linking } from "react-native";
 import * as Location from "expo-location";
+import * as TaskManager from "expo-task-manager";
 import MapView, { Marker, Polyline, Circle, WMSTile } from "react-native-maps";
 import NetInfo from "@react-native-community/netinfo";
 import * as ImagePicker from "expo-image-picker";
@@ -17,6 +18,7 @@ const R = 6371000;
 const deg2rad = Math.PI / 180;
 let sfSeq = 0; // sequência para IDs únicos simulados
 const AUTO_BOUNCE_INTERVAL_MS = 15000; // no máximo 1 bounce a cada 15s
+const BG_TASK_NAME = 'smokedistance-location-updates';
 
 const SafeOps = {
   parseNumber: (value, fallback = 0) => {
@@ -668,6 +670,8 @@ export default function App() {
   const [focoPendente, setFocoPendente] = useState(false); // Se há um foco aguardando salvar
   const [focoSalvoAgora, setFocoSalvoAgora] = useState(false); // Se acabou de salvar
   const [mapaCamera, setMapaCamera] = useState('hybrid'); // Tipo de mapa: standard, satellite, terrain
+  const [gpsMode, setGpsMode] = useState('normal'); // eco | normal | preciso
+  const [bgLocationEnabled, setBgLocationEnabled] = useState(false); // atualizações em segundo plano
   const [trilhasProximas, setTrilhasProximas] = useState([]); // Trilhas encontradas
   const [meteoDataDinamica, setMeteoDataDinamica] = useState({
     temp: '?',
@@ -697,6 +701,7 @@ export default function App() {
   const [recenterVisible, setRecenterVisible] = useState(false);
   const recenterDelayRef = useRef(null);
   const recenterAutoHideRef = useRef(null);
+  const lastKnownRef = useRef(null);
 
   // Valor seguro para evitar undefined
   const safeInputsManualFoco = inputsManualFoco || {
@@ -1121,13 +1126,20 @@ export default function App() {
           perm = await Location.requestForegroundPermissionsAsync();
           if (!perm.granted) return;
         }
+        // Configuração do watcher conforme modo GPS
+        const cfg = (function() {
+          if (gpsMode === 'eco') {
+            return { accuracy: Location.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 };
+          }
+          if (gpsMode === 'preciso') {
+            return { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 1, timeInterval: 1000 };
+          }
+          // normal
+          return { accuracy: Location.Accuracy.High, distanceInterval: 3, timeInterval: 2000 };
+        })();
         // Inicia watcher com intervalo por distância ou tempo
         watcher = await Location.watchPositionAsync(
-          {
-            accuracy: Location.Accuracy.Highest,
-            distanceInterval: 1,
-            timeInterval: 1500
-          },
+          cfg,
           (pos) => {
             if (pos?.coords) {
               setLocation(prev => {
@@ -1136,6 +1148,7 @@ export default function App() {
                 const moved = Math.abs(prev.latitude - pos.coords.latitude) > 0.000005 || Math.abs(prev.longitude - pos.coords.longitude) > 0.000005;
                 return moved ? pos.coords : prev;
               });
+              lastKnownRef.current = pos.coords;
               // Auto-centralizar câmera se habilitado
               if (followUser && mapRef?.current) {
                 const reg = {
@@ -1174,6 +1187,17 @@ export default function App() {
                   try { mapRef.current.animateToRegion(reg2, 600); } catch {}
                 }
               }
+            } else {
+              // Sem coords no callback (GPS momentaneamente indisponível): manter seguindo usando última posição conhecida
+              if (followUser && mapRef?.current && lastKnownRef.current) {
+                const reg = {
+                  latitude: lastKnownRef.current.latitude,
+                  longitude: lastKnownRef.current.longitude,
+                  latitudeDelta: currentRegion?.latitudeDelta || 0.02,
+                  longitudeDelta: currentRegion?.longitudeDelta || 0.02,
+                };
+                try { mapRef.current.animateToRegion(reg, 600); } catch {}
+              }
             }
           }
         );
@@ -1184,7 +1208,65 @@ export default function App() {
     return () => {
       try { if (watcher) watcher.remove(); } catch {}
     };
-  }, [followUser, currentRegion]);
+  }, [followUser, currentRegion, gpsMode]);
+
+  // Registrar a task de localização em segundo plano (uma vez)
+  try {
+    TaskManager.isTaskRegisteredAsync(BG_TASK_NAME).then((registered) => {
+      if (!registered) {
+        TaskManager.defineTask(BG_TASK_NAME, ({ data, error }) => {
+          if (error) return;
+          const { locations } = data || {};
+          if (locations && locations.length > 0) {
+            const loc = locations[0];
+            const coords = loc.coords;
+            if (coords) {
+              // Atualiza estado mínimo para manter follow e breadcrumbs
+              setLocation(prev => {
+                if (!prev) return coords;
+                const moved = Math.abs(prev.latitude - coords.latitude) > 0.000005 || Math.abs(prev.longitude - coords.longitude) > 0.000005;
+                return moved ? coords : prev;
+              });
+            }
+          }
+        });
+      }
+    });
+  } catch {}
+
+  // Iniciar/parar atualizações de localização em segundo plano conforme toggle
+  useEffect(() => {
+    (async () => {
+      try {
+        const hasPerm = await Location.getForegroundPermissionsAsync();
+        if (!hasPerm.granted) {
+          const req = await Location.requestForegroundPermissionsAsync();
+          if (!req.granted) return;
+        }
+        // Android exige permissão de background separada
+        const bgPerm = await Location.getBackgroundPermissionsAsync();
+        if (!bgPerm.granted) {
+          const reqBg = await Location.requestBackgroundPermissionsAsync();
+          // Mesmo se negar, seguimos sem fundo
+        }
+        const cfg = (function() {
+          if (gpsMode === 'eco') {
+            return { accuracy: Location.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10, showsBackgroundLocationIndicator: true, pausesUpdatesAutomatically: false };
+          }
+          if (gpsMode === 'preciso') {
+            return { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 1, showsBackgroundLocationIndicator: true, pausesUpdatesAutomatically: false };
+          }
+          return { accuracy: Location.Accuracy.High, timeInterval: 2000, distanceInterval: 3, showsBackgroundLocationIndicator: true, pausesUpdatesAutomatically: false };
+        })();
+        const running = await Location.hasStartedLocationUpdatesAsync(BG_TASK_NAME);
+        if (bgLocationEnabled && !running) {
+          await Location.startLocationUpdatesAsync(BG_TASK_NAME, cfg);
+        } else if (!bgLocationEnabled && running) {
+          await Location.stopLocationUpdatesAsync(BG_TASK_NAME);
+        }
+      } catch {}
+    })();
+  }, [bgLocationEnabled, gpsMode]);
 
   function handleRecenter() {
     if (!location || !mapRef?.current) return;
@@ -1289,14 +1371,15 @@ export default function App() {
             setLastKnownLocationBeforeDisconnect(location);
             setDisconnectTime(Date.now()); // Registrar quando desconectou
             setLastBreadcrumbLocation(location); // Inicializar para comparar distância depois
-            // Finalizar círculo de cobertura se houver centro ativo
-            (async () => {
-              try {
-                await addCoverageCircleIfValid(coverageCenter || location, location);
-              } finally {
-                setCoverageCenter(null);
-              }
-            })();
+                // Finalizar círculo de cobertura usando melhor centro disponível
+                (async () => {
+                  try {
+                    const center = coverageCenter || lastKnownRef.current || location;
+                    await addCoverageCircleIfValid(center, location);
+                  } finally {
+                    setCoverageCenter(null);
+                  }
+                })();
           }
           
           // Se conectando, limpar último localização congelada (mas MANTER breadcrumbs!)
@@ -3018,6 +3101,47 @@ export default function App() {
             <Text style={styles.text}>Detecção de focos de fumaça</Text>
             <Text style={styles.text}>© 2025</Text>
           </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>📍 Atualização de GPS</Text>
+            <Text style={styles.text}>Escolha o modo de atualização do GPS:</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity
+                style={[styles.mapButton, { flex: 1, backgroundColor: gpsMode === 'eco' ? '#2E7D32' : '#9E9E9E' }]}
+                onPress={() => setGpsMode('eco')}
+              >
+                <Text style={styles.buttonText}>Eco</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.mapButton, { flex: 1, backgroundColor: gpsMode === 'normal' ? '#2E7D32' : '#9E9E9E' }]}
+                onPress={() => setGpsMode('normal')}
+              >
+                <Text style={styles.buttonText}>Normal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.mapButton, { flex: 1, backgroundColor: gpsMode === 'preciso' ? '#2E7D32' : '#9E9E9E' }]}
+                onPress={() => setGpsMode('preciso')}
+              >
+                <Text style={styles.buttonText}>Preciso</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.text, { fontSize: 12, color: '#555', marginTop: 6 }]}>
+              Eco: menos consumo (≈ 5s/10m) • Normal: equilibrado (≈ 2s/3m) • Preciso: máximo (≈ 1s/1m)
+            </Text>
+            <View style={{ marginTop: 10 }}>
+              <Text style={styles.text}>GPS em segundo plano:</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  style={[styles.mapButton, { flex: 1, backgroundColor: bgLocationEnabled ? '#2E7D32' : '#9E9E9E' }]}
+                  onPress={() => setBgLocationEnabled(!bgLocationEnabled)}
+                >
+                  <Text style={styles.buttonText}>{bgLocationEnabled ? 'Ativado' : 'Desativado'}</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.text, { fontSize: 12, color: '#555', marginTop: 6 }]}>Ative para manter rastreamento mesmo sem Wi‑Fi ou com a tela desligada. No Android, recomenda-se remover otimização de bateria.</Text>
+            </View>
+          </View>
+
           <TouchableOpacity 
             style={styles.buttonPrimary}
             onPress={() => setPage(1)}
