@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, KeyboardAvoidingView, Platform, Linking } from "react-native";
 import * as Location from "expo-location";
+import * as TaskManager from "expo-task-manager";
+import * as IntentLauncher from 'expo-intent-launcher';
 import MapView, { Marker, Polyline, Circle, WMSTile } from "react-native-maps";
 import NetInfo from "@react-native-community/netinfo";
 import * as ImagePicker from "expo-image-picker";
@@ -17,6 +19,7 @@ const R = 6371000;
 const deg2rad = Math.PI / 180;
 let sfSeq = 0; // sequência para IDs únicos simulados
 const AUTO_BOUNCE_INTERVAL_MS = 15000; // no máximo 1 bounce a cada 15s
+const BG_TASK_NAME = 'smokedistance-location-updates';
 
 const SafeOps = {
   parseNumber: (value, fallback = 0) => {
@@ -85,23 +88,19 @@ async function exportarFocosJSON(focos, localizacao) {
     return null;
   }
 }
-              // Se já tentou reinício neste ciclo, não repetir até liberar (allowRetryThisCycle)
-              if (!gpsRecoveryAttemptedRef.current) {
-                if (sinceLastRestart > minRestartGap && !gpsRestarting) {
-                  // Primeira tentativa do ciclo
-                  gpsRecoveryAttemptedRef.current = true;
-                  lastGpsRestartRef.current = now;
-                  setGpsRestarting(true);
-                  const gapInfo = sinceLastRestart === Infinity ? 'primeira tentativa' : `gap ${(sinceLastRestart/1000).toFixed(1)}s`;
-                  console.log(`🔄 Reiniciando watcher (${gapInfo})`);
-                  setWatchRestartToken(Date.now());
-                  setGpsGraceUntil(Date.now() + 8000);
-                }
-              } else if (allowRetryThisCycle) {
-                // Ciclo prolongado: libera nova tentativa (após 90s)
-                  gpsRecoveryAttemptedRef.current = false;
-                  staleLoggedRef.current = false; // permitirá novo log único
-              }
+
+// 📧 PREPARAR DADOS PARA ENVIO VIA EMAIL/API
+async function prepararDadosParaEnvio(focos, localizacao) {
+  try {
+    const jsonString = await exportarFocosJSON(focos, localizacao);
+    
+    if (!jsonString) return null;
+    
+    // Criar objeto para envio
+    const dadosEnvio = {
+      arquivo: `focos_${Date.now()}.json`,
+      conteudo: jsonString,
+      totalFocos: focos.length,
       dataEnvio: new Date().toISOString()
     };
     
@@ -673,20 +672,8 @@ export default function App() {
   const [focoSalvoAgora, setFocoSalvoAgora] = useState(false); // Se acabou de salvar
   const [mapaCamera, setMapaCamera] = useState('hybrid'); // Tipo de mapa: standard, satellite, terrain
   const [gpsMode, setGpsMode] = useState('normal'); // eco | normal | preciso
-  // Removido suporte a localização em segundo plano (Android agora igual iOS)
-  // Removido sistema Android 1-toque; usar instruções manuais
-  const [darkMode, setDarkMode] = useState(false); // tema noite para economia
-  const [prefsLoaded, setPrefsLoaded] = useState(false); // preferências persistidas carregadas
-  const [lastLocationUpdateTs, setLastLocationUpdateTs] = useState(Date.now()); // timestamp da última atualização de localização
-  const [gpsStale, setGpsStale] = useState(false); // indica se GPS ficou inativo
-  const [watchRestartToken, setWatchRestartToken] = useState(0); // força reinício do watcher
-  const [gpsRestarting, setGpsRestarting] = useState(false); // evita múltiplos reinícios simultâneos
-  const [gpsGraceUntil, setGpsGraceUntil] = useState(Date.now() + 15000); // período de tolerância inicial (15s para evitar banner cedo)
-  // Refs para controle fino de reinício sem re-render extra
-  const lastGpsRestartRef = useRef(0); // timestamp ms do último reinício forçado
-  const staleLoggedRef = useRef(false); // evita spam de log enquanto permanece stale
-  const gpsRecoveryAttemptedRef = useRef(false); // garante apenas uma tentativa de recuperação por ciclo
-  const staleStartRef = useRef(0); // início do ciclo de inatividade
+  const [bgLocationEnabled, setBgLocationEnabled] = useState(false); // atualizações em segundo plano
+  const [androidBoosted, setAndroidBoosted] = useState(false); // modo 1-toque aplicado
   const [trilhasProximas, setTrilhasProximas] = useState([]); // Trilhas encontradas
   const [meteoDataDinamica, setMeteoDataDinamica] = useState({
     temp: '?',
@@ -717,14 +704,6 @@ export default function App() {
   const recenterDelayRef = useRef(null);
   const recenterAutoHideRef = useRef(null);
   const lastKnownRef = useRef(null);
-  const lastIsConnectedRef = useRef(null); // rastreia último estado de conexão real
-  // Refs para evitar re-registro de listeners em hooks que observam muitos estados
-  const focosRef = useRef(focos);
-  const waypointTemporarioRef = useRef(waypointTemporario);
-  const locationRef = useRef(location);
-  useEffect(() => { focosRef.current = focos; }, [focos]);
-  useEffect(() => { waypointTemporarioRef.current = waypointTemporario; }, [waypointTemporario]);
-  useEffect(() => { locationRef.current = location; }, [location]);
 
   // Valor seguro para evitar undefined
   const safeInputsManualFoco = inputsManualFoco || {
@@ -1100,25 +1079,6 @@ export default function App() {
     })();
   }, []);
 
-  // Carregar preferências persistidas (tema, gps)
-  useEffect(() => {
-    (async () => {
-      try {
-        const v = await AsyncStorage.getItem('pref_dark_mode');
-        if (v === '1') setDarkMode(true);
-        const g = await AsyncStorage.getItem('pref_gps_mode');
-        if (g === 'eco' || g === 'normal' || g === 'preciso') setGpsMode(g);
-        // Removido: leitura de preferências de localização em segundo plano (unificado iOS/Android)
-      } catch {}
-      finally { setPrefsLoaded(true); }
-    })();
-  }, []);
-  // Persistir tema
-  useEffect(() => { if (prefsLoaded) (async () => { try { await AsyncStorage.setItem('pref_dark_mode', darkMode ? '1' : '0'); } catch {} })(); }, [darkMode, prefsLoaded]);
-  // Persistir modo GPS
-  useEffect(() => { if (prefsLoaded) (async () => { try { await AsyncStorage.setItem('pref_gps_mode', gpsMode); } catch {} })(); }, [gpsMode, prefsLoaded]);
-  // Removido persistência de localização em segundo plano
-
   const MIN_RADIUS_FOR_CIRCLE = 300; // metros: evita ruído urbano
 
   async function shouldSkipCircle(edge) {
@@ -1162,7 +1122,6 @@ export default function App() {
   useEffect(() => {
     let watcher = null;
     (async () => {
-      if (!prefsLoaded) return; // aguarda preferências
       try {
         let perm = await Location.getForegroundPermissionsAsync();
         if (!perm.granted) {
@@ -1185,16 +1144,6 @@ export default function App() {
           cfg,
           (pos) => {
             if (pos?.coords) {
-              setLastLocationUpdateTs(Date.now());
-              // Ao receber localização, fim de estado de reinício (se estava reiniciando)
-              if (gpsRestarting) {
-                setGpsRestarting(false);
-                // Nova janela de graça para evitar falso positivo imediato
-                setGpsGraceUntil(Date.now() + 7000);
-              }
-              // Reset flags de ciclo stale/recovery ao receber atualização
-              staleLoggedRef.current = false;
-              gpsRecoveryAttemptedRef.current = false;
               setLocation(prev => {
                 // Evitar re-render inútil se não mudou nada relevante
                 if (!prev) return pos.coords;
@@ -1261,60 +1210,100 @@ export default function App() {
     return () => {
       try { if (watcher) watcher.remove(); } catch {}
     };
-  }, [followUser, currentRegion, gpsMode, prefsLoaded, watchRestartToken]);
+  }, [followUser, currentRegion, gpsMode]);
 
-  // Removido registro de task de localização em segundo plano (Android igual iOS)
-
-  // Monitorar inatividade do GPS e reiniciar watcher se parado
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      if (now < gpsGraceUntil) return;
-      const inactiveMs = now - lastLocationUpdateTs;
-      const baseLimit = gpsMode === 'preciso' ? 6000 : gpsMode === 'eco' ? 15000 : 10000;
-      const limit = Math.round(baseLimit * 1.5);
-      const isStale = inactiveMs > limit;
-      if (isStale) {
-        if (!gpsStale) {
-          setGpsStale(true);
-          staleStartRef.current = now; // marca início do ciclo
-        }
-        if (!staleLoggedRef.current) {
-          console.log(`⚠️ GPS parado há ${(inactiveMs/1000).toFixed(1)}s (> ${limit/1000}s).`);
-          staleLoggedRef.current = true;
-        }
-        const minRestartGap = 15000; // nunca tentar antes de 15s desde último reinício
-        const sinceLastRestart = now - (lastGpsRestartRef.current || 0);
-        const cycleDuration = staleStartRef.current ? now - staleStartRef.current : inactiveMs;
-        // Apenas UMA tentativa nos primeiros 90s do ciclo
-        const allowRetryThisCycle = cycleDuration > 90000; // >90s de inatividade contínua
-        if (!gpsRecoveryAttemptedRef.current && sinceLastRestart > minRestartGap && !gpsRestarting) {
-          // Primeira tentativa do ciclo
-          gpsRecoveryAttemptedRef.current = true;
-          lastGpsRestartRef.current = now;
-          setGpsRestarting(true);
-          console.log(`🔄 Reiniciando watcher (1ª tentativa ciclo, gap ${(sinceLastRestart/1000).toFixed(1)}s)`);
-          setWatchRestartToken(Date.now());
-          setGpsGraceUntil(Date.now() + 8000);
-        } else if (allowRetryThisCycle && sinceLastRestart > minRestartGap && !gpsRestarting && gpsRecoveryAttemptedRef.current) {
-          // Após 90s sem sinal, liberar nova tentativa
-          gpsRecoveryAttemptedRef.current = false; // libera
-          staleLoggedRef.current = false; // força novo log
-        }
-      } else {
-        if (gpsStale) setGpsStale(false);
-        staleLoggedRef.current = false;
-        gpsRecoveryAttemptedRef.current = false;
-        if (gpsRestarting) setGpsRestarting(false);
-        staleStartRef.current = 0;
+  // Registrar a task de localização em segundo plano (uma vez)
+  try {
+    TaskManager.isTaskRegisteredAsync(BG_TASK_NAME).then((registered) => {
+      if (!registered) {
+        TaskManager.defineTask(BG_TASK_NAME, ({ data, error }) => {
+          if (error) return;
+          const { locations } = data || {};
+          if (locations && locations.length > 0) {
+            const loc = locations[0];
+            const coords = loc.coords;
+            if (coords) {
+              // Atualiza estado mínimo para manter follow e breadcrumbs
+              setLocation(prev => {
+                if (!prev) return coords;
+                const moved = Math.abs(prev.latitude - coords.latitude) > 0.000005 || Math.abs(prev.longitude - coords.longitude) > 0.000005;
+                return moved ? coords : prev;
+              });
+            }
+          }
+        });
       }
-    }, 2500);
-    return () => clearInterval(interval);
-  }, [lastLocationUpdateTs, gpsMode, gpsStale, gpsRestarting, gpsGraceUntil]);
+    });
+  } catch {}
 
-  // Removido efeito de controle de localização em segundo plano
+  // Iniciar/parar atualizações de localização em segundo plano conforme toggle
+  useEffect(() => {
+    (async () => {
+      try {
+        const hasPerm = await Location.getForegroundPermissionsAsync();
+        if (!hasPerm.granted) {
+          const req = await Location.requestForegroundPermissionsAsync();
+          if (!req.granted) return;
+        }
+        // Android exige permissão de background separada
+        const bgPerm = await Location.getBackgroundPermissionsAsync();
+        if (!bgPerm.granted) {
+          const reqBg = await Location.requestBackgroundPermissionsAsync();
+          // Mesmo se negar, seguimos sem fundo
+        }
+        const cfg = (function() {
+          if (gpsMode === 'eco') {
+            return { accuracy: Location.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10, showsBackgroundLocationIndicator: true, pausesUpdatesAutomatically: false };
+          }
+          if (gpsMode === 'preciso') {
+            return { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 1, showsBackgroundLocationIndicator: true, pausesUpdatesAutomatically: false };
+          }
+          return { accuracy: Location.Accuracy.High, timeInterval: 2000, distanceInterval: 3, showsBackgroundLocationIndicator: true, pausesUpdatesAutomatically: false };
+        })();
+        const running = await Location.hasStartedLocationUpdatesAsync(BG_TASK_NAME);
+        if (bgLocationEnabled && !running) {
+          await Location.startLocationUpdatesAsync(BG_TASK_NAME, cfg);
+        } else if (!bgLocationEnabled && running) {
+          await Location.stopLocationUpdatesAsync(BG_TASK_NAME);
+        }
+      } catch {}
+    })();
+  }, [bgLocationEnabled, gpsMode]);
 
-  // Função removida: otimização 1-toque substituída por instruções
+  async function ativarModoAndroidAvancado() {
+    try {
+      // 1. Solicitar permissões foreground/background
+      let fg = await Location.getForegroundPermissionsAsync();
+      if (!fg.granted) {
+        fg = await Location.requestForegroundPermissionsAsync();
+        if (!fg.granted) {
+          Alert.alert('Permissão', 'GPS foreground negado');
+          return;
+        }
+      }
+      let bg = await Location.getBackgroundPermissionsAsync();
+      if (!bg.granted) {
+        bg = await Location.requestBackgroundPermissionsAsync();
+      }
+      // 2. Ajustar para modo preciso e fundo
+      setGpsMode('preciso');
+      setBgLocationEnabled(true);
+      // 3. Abrir tela de ignorar otimização de bateria (Android)
+      if (Platform.OS === 'android') {
+        try {
+          await IntentLauncher.startActivityAsync(IntentLauncher.ActivityAction.IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+        } catch (e) {
+          try {
+            await IntentLauncher.startActivityAsync(IntentLauncher.ActivityAction.POWER_USAGE_SUMMARY);
+          } catch {}
+        }
+      }
+      setAndroidBoosted(true);
+      Alert.alert('✅ Otimização Aplicada', 'Modo Preciso + GPS em segundo plano ativados. Ajuste a bateria na tela aberta para não limitar o app.');
+    } catch (e) {
+      Alert.alert('Erro', 'Falha ao aplicar configuração: ' + (e?.message || 'desconhecido'));
+    }
+  }
 
   function handleRecenter() {
     if (!location || !mapRef?.current) return;
@@ -1407,61 +1396,75 @@ export default function App() {
   }, [location, isConnected]);
 
   // Monitorar conectividade (apenas informa status)
-  // Listener de rede estável (evita múltiplos registros e logs duplicados)
   useEffect(() => {
     try {
       const unsubscribe = NetInfo.addEventListener(state => {
         try {
-          if (state.isConnected !== lastIsConnectedRef.current) {
-            console.log("🌐 Status Rede:", state.isConnected ? "Conectado" : "Desconectado", state.type);
-          }
-          const loc = locationRef.current;
-          // Detectar transição para desconectado (somente se antes estava conectado)
-          if (lastIsConnectedRef.current === true && state.isConnected === false && loc) {
+          console.log("🌐 Status Rede:", state.isConnected ? "Conectado" : "Desconectado", state.type);
+          
+          // Se desconectando e temos localização, guardar última localização conhecida
+          if (!state.isConnected && isConnected && location) {
             console.log("📍 Rede caiu! Congelando última localização conhecida...");
-            setLastKnownLocationBeforeDisconnect(loc);
-            setDisconnectTime(Date.now());
-            setLastBreadcrumbLocation(loc);
-            (async () => {
-              try {
-                const center = coverageCenter || lastKnownRef.current || loc;
-                await addCoverageCircleIfValid(center, loc);
-              } finally {
-                setCoverageCenter(null);
-              }
-            })();
+            setLastKnownLocationBeforeDisconnect(location);
+            setDisconnectTime(Date.now()); // Registrar quando desconectou
+            setLastBreadcrumbLocation(location); // Inicializar para comparar distância depois
+                // Finalizar círculo de cobertura usando melhor centro disponível
+                (async () => {
+                  try {
+                    const center = coverageCenter || lastKnownRef.current || location;
+                    await addCoverageCircleIfValid(center, location);
+                  } finally {
+                    setCoverageCenter(null);
+                  }
+                })();
           }
-          // Detectar reconexão somente se realmente esteve desconectado (tinha disconnectTime)
-          if (lastIsConnectedRef.current === false && state.isConnected === true) {
-            if (disconnectTime) {
-              console.log("📍 Rede restaurada! Removendo marcador congelado...");
-              setLastKnownLocationBeforeDisconnect(null);
-              setDisconnectTime(null);
-              setLastBreadcrumbLocation(null);
-              if (loc) setCoverageCenter(loc);
-              (async () => { try { await syncPendingPings(); } catch {} })();
-            }
+          
+          // Se conectando, limpar último localização congelada (mas MANTER breadcrumbs!)
+          if (state.isConnected && !isConnected) {
+            console.log("📍 Rede restaurada! Removendo marcador congelado...");
+            setLastKnownLocationBeforeDisconnect(null);
+            setDisconnectTime(null);
+            // NÃO limpar breadcrumbs - eles ficam permanentes como dados públicos!
+            setLastBreadcrumbLocation(null);
+            // Definir centro de cobertura no momento da conexão
+            if (location) setCoverageCenter(location);
+                      // Drenar pings pendentes
+                      (async () => { try { await syncPendingPings(); } catch {} })();
           }
+          
           setIsConnected(state.isConnected);
-          lastIsConnectedRef.current = state.isConnected; // atualizar ref após processar
-          const temFocoMarcado = (focosRef.current?.length || 0) > 0 || waypointTemporarioRef.current;
-          if (state.isConnected && loc && temFocoMarcado) {
+          
+          // SE CONECTOU À REDE, TEM FOCO MARCADO (observação ou temporário) E TEM LOCALIZAÇÃO, MARCAR NO MAPA
+          const temFocoMarcado = focos.length > 0 || waypointTemporario;
+          if (state.isConnected && location && temFocoMarcado) {
+            console.log("✅ Rede conectada com foco ativo! Marcando ponto de sinal...");
+            
             setNetworkMarker({
-              latitude: loc.latitude,
-              longitude: loc.longitude,
+              latitude: location.latitude,
+              longitude: location.longitude,
               title: `📶 Sinal de Rede: ${state.type}`,
-              description: `Rede conectada!\nTipo: ${state.type}\nLat: ${loc.latitude.toFixed(4)}\nLon: ${loc.longitude.toFixed(4)}`
+              description: `Rede conectada!\nTipo: ${state.type}\nLat: ${location.latitude.toFixed(4)}\nLon: ${location.longitude.toFixed(4)}`
             });
+            
+            console.log('✅ Sinal de rede marcado no mapa!');
           }
         } catch (err) {
           console.warn("⚠️ Erro ao processar estado de rede:", err.message);
         }
       });
-      return () => { try { unsubscribe && unsubscribe(); } catch {} };
+
+      return () => {
+        try {
+          if (unsubscribe) unsubscribe();
+        } catch (err) {
+          console.warn("⚠️ Erro ao desinscrever NetInfo:", err.message);
+        }
+      };
     } catch (err) {
       console.warn("⚠️ Erro ao iniciar monitoramento de rede:", err.message);
+      // Fallback: app continua funcionando sem monitoramento
     }
-  }, []);
+  }, [location, focos, waypointTemporario]);
 
   // Buscar declinação magnética com WMM (World Magnetic Model) - como iPhone faz
   useEffect(() => {
@@ -1919,37 +1922,37 @@ export default function App() {
 
   if (page === 1) {
     return (
-      <View style={[styles.container, darkMode && darkStyles.container]}>
-        <View style={[styles.header, darkMode && darkStyles.header]}>
-          <Text style={[styles.title, darkMode && darkStyles.title]}>📱 SmokeDistance</Text>
-          <Text style={[styles.subtitle, darkMode && darkStyles.subtitle]}>Detecção de Fumaça</Text>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>📱 SmokeDistance</Text>
+          <Text style={styles.subtitle}>Detecção de Fumaça</Text>
         </View>
 
         <ScrollView style={styles.content}>
           {/* Localização */}
-          <View style={[styles.card, darkMode && darkStyles.card]}>
-            <Text style={[styles.cardTitle, darkMode && darkStyles.cardTitle]}>📍 Localização GPS</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>📍 Localização GPS</Text>
             {location ? (
               <>
-                <Text style={[styles.text, darkMode && darkStyles.text]}>Lat: {location.latitude.toFixed(4)}°</Text>
-                <Text style={[styles.text, darkMode && darkStyles.text]}>Lon: {location.longitude.toFixed(4)}°</Text>
-                <Text style={[styles.text, darkMode && darkStyles.text]}>Alt: {location.altitude ? location.altitude.toFixed(1) : 'N/D'}m</Text>
+                <Text style={styles.text}>Lat: {location.latitude.toFixed(4)}°</Text>
+                <Text style={styles.text}>Lon: {location.longitude.toFixed(4)}°</Text>
+                <Text style={styles.text}>Alt: {location.altitude ? location.altitude.toFixed(1) : 'N/D'}m</Text>
               </>
             ) : (
-              <Text style={[styles.text, darkMode && darkStyles.text]}>❌ GPS não disponível</Text>
+              <Text style={styles.text}>❌ GPS não disponível</Text>
             )}
           </View>
 
           {/* Bussola - REMOVIDA, agora é mini no mapa */}
 
           {/* Dados Meteorológicos */}
-          <View style={[styles.card, darkMode && darkStyles.card]}>
-            <Text style={[styles.cardTitle, darkMode && darkStyles.cardTitle]}>📊 Dados Meteorológicos</Text>
-            <Text style={[styles.text, darkMode && darkStyles.text]}>🌡️ Temperatura: {meteoDataDinamica.temp}°C</Text>
-            <Text style={[styles.text, darkMode && darkStyles.text]}>💧 Umidade: {meteoDataDinamica.humidity}%</Text>
-            <Text style={[styles.text, darkMode && darkStyles.text]}>💨 Vento: {meteoDataDinamica.windSpeed} km/h</Text>
-            <Text style={[styles.text, darkMode && darkStyles.text]}>🧭 Direção: {meteoDataDinamica.windDirection}°</Text>
-            <Text style={[styles.text, { color: darkMode ? '#64B5F6' : '#1976D2', fontWeight: 'bold', marginTop: 8 }]}>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>📊 Dados Meteorológicos</Text>
+            <Text style={styles.text}>🌡️ Temperatura: {meteoDataDinamica.temp}°C</Text>
+            <Text style={styles.text}>💧 Umidade: {meteoDataDinamica.humidity}%</Text>
+            <Text style={styles.text}>💨 Vento: {meteoDataDinamica.windSpeed} km/h</Text>
+            <Text style={styles.text}>🧭 Direção: {meteoDataDinamica.windDirection}°</Text>
+            <Text style={[styles.text, { color: '#1976D2', fontWeight: 'bold', marginTop: 8 }]}>
               📝 {meteoDataDinamica.descricao}
             </Text>
             {!isConnected && (
@@ -1963,10 +1966,10 @@ export default function App() {
 
           {/* Status de Fogo Pendente */}
           {pendingFireData && (
-            <View style={[styles.card, darkMode && darkStyles.card, { backgroundColor: darkMode ? '#665c2e' : '#fff3cd', borderLeftWidth: 4, borderLeftColor: '#ff9800' }]}>
+            <View style={[styles.card, { backgroundColor: '#fff3cd', borderLeftWidth: 4, borderLeftColor: '#ff9800' }]}>
               <Text style={[styles.cardTitle, { color: '#ff6f00' }]}>⏳ Fogo Aguardando Conexão</Text>
-              <Text style={[styles.text, darkMode && darkStyles.text]}>🔴 Fogo detectado mas SEM sinal de internet</Text>
-              <Text style={[styles.text, darkMode && darkStyles.text]}>📡 Será sincronizado quando conectar</Text>
+              <Text style={styles.text}>🔴 Fogo detectado mas SEM sinal de internet</Text>
+              <Text style={styles.text}>📡 Será sincronizado quando conectar</Text>
               <TouchableOpacity
                 style={[styles.buttonPrimary, { backgroundColor: '#8B5C2A', marginTop: 10 }]}
                 onPress={() => {
@@ -2005,7 +2008,7 @@ export default function App() {
 
           {/* Botão Câmera */}
           <TouchableOpacity 
-            style={[styles.buttonPrimary, darkMode && darkStyles.buttonPrimary, { backgroundColor: '#8B5C2A', marginBottom: 15 }]}
+            style={[styles.buttonPrimary, { backgroundColor: '#8B5C2A', marginBottom: 15 }]}
             onPress={() => setCameraActive(true)}
           >
             <Text style={styles.buttonText}>📷 CÂMERA</Text>
@@ -2051,15 +2054,15 @@ export default function App() {
     const initialMapType = 'hybrid';
     const initialDelta = 0.025; // Zoom 2x maior
     return (
-      <View style={[styles.container, darkMode && darkStyles.container]}>
-        <View style={[styles.header, darkMode && darkStyles.header]}>
-          <Text style={[styles.title, darkMode && darkStyles.title]}>🗺️ Mapa</Text>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>🗺️ Mapa</Text>
         </View>
         
         {location && (
           <ScrollView style={{ flex: 1 }}>
             {/* Botões de camadas do mapa */}
-            <View style={{ flexDirection: 'row', padding: 10, gap: 5, backgroundColor: darkMode ? '#1E1E1E' : '#c5e1c9', borderBottomWidth: 1, borderBottomColor: darkMode ? '#2A2A2A' : '#9fbf9d' }}>
+            <View style={{ flexDirection: 'row', padding: 10, gap: 5, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ddd' }}>
               <TouchableOpacity 
                 style={[styles.mapButton, { flex: 1, backgroundColor: followUser ? '#43A047' : '#999' }]}
                 onPress={() => setFollowUser(!followUser)}
@@ -2204,16 +2207,11 @@ export default function App() {
                     transparent: true,
                     srs: 'EPSG:3857',
                     styles: '',
+                    // Camadas comuns do FIRMS (MODIS 24h e VIIRS 24h). Você pode ajustar após validar no GetCapabilities.
                     layers: 'fires_modis_24,fires_viirs_24',
                   }}
                 />
               ) : null}
-              {/* Banner GPS: só mostra se stale persistir e após 1 reinício (gpsRestarting já disparou e ainda stale) */}
-              {gpsStale && gpsRestarting && (
-                <View style={{ position: 'absolute', top: 8, left: 8, right: 8, padding: 10, borderRadius: 8, backgroundColor: darkMode ? '#5d4037' : '#ffeb3b', elevation: 4 }}>
-                  <Text style={{ color: darkMode ? '#ffe082' : '#5d4037', fontWeight: 'bold' }}>🔄 Recuperando GPS… aguardando sinal</Text>
-                </View>
-              )}
               {/* Marcador de localização atual */}
               <Marker
                 coordinate={{
@@ -2950,9 +2948,9 @@ export default function App() {
   // 🛰️ PÁGINA 5: SATÉLITES (grátis)
   if (page === 5) {
     return (
-      <View style={[styles.container, darkMode && darkStyles.container]}>
-        <View style={[styles.header, darkMode && darkStyles.header]}>
-          <Text style={[styles.title, darkMode && darkStyles.title]}>🛰️ Satélites (grátis)</Text>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>🛰️ Satélites (grátis)</Text>
         </View>
         <ScrollView style={styles.content}>
           <View style={[styles.card, { backgroundColor: '#E3F2FD', borderLeftWidth: 4, borderLeftColor: '#2196F3' }]}>
@@ -3027,9 +3025,9 @@ export default function App() {
   // 📤 PÁGINA 4: COMPARTILHAMENTO
   if (page === 4) {
     return (
-      <View style={[styles.container, darkMode && darkStyles.container]}>
-        <View style={[styles.header, darkMode && darkStyles.header]}>
-          <Text style={[styles.title, darkMode && darkStyles.title]}>📤 Compartilhar Dados</Text>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>📤 Compartilhar Dados</Text>
         </View>
         <ScrollView style={styles.content}>
           
@@ -3129,9 +3127,9 @@ export default function App() {
 
   if (page === 3) {
     return (
-      <View style={[styles.container, darkMode && darkStyles.container]}>
-        <View style={[styles.header, darkMode && darkStyles.header]}>
-          <Text style={[styles.title, darkMode && darkStyles.title]}>⚙️ Configurações</Text>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>⚙️ Configurações</Text>
         </View>
         <ScrollView style={styles.content}>
           <View style={styles.card}>
@@ -3167,17 +3165,27 @@ export default function App() {
             <Text style={[styles.text, { fontSize: 12, color: '#555', marginTop: 6 }]}>
               Eco: menos consumo (≈ 5s/10m) • Normal: equilibrado (≈ 2s/3m) • Preciso: máximo (≈ 1s/1m)
             </Text>
-            {/* Removido bloco de GPS em segundo plano (Android unificado com iOS) */}
-          </View>
-          <View style={[styles.card, darkMode && darkStyles.card]}>
-            <Text style={[styles.cardTitle, darkMode && darkStyles.cardTitle]}>🌙 Modo Noite</Text>
-            <Text style={[styles.text, darkMode && darkStyles.text]}>Economiza bateria (AMOLED) e reduz brilho em campo.</Text>
-            <TouchableOpacity
-              style={[styles.mapButton, { marginTop: 10, backgroundColor: darkMode ? '#4CAF50' : '#8B5C2A' }]}
-              onPress={() => setDarkMode(!darkMode)}
-            >
-              <Text style={styles.buttonText}>{darkMode ? '✅ Ativo' : '🌙 Ativar'}</Text>
-            </TouchableOpacity>
+            <View style={{ marginTop: 10 }}>
+              <Text style={styles.text}>GPS em segundo plano:</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  style={[styles.mapButton, { flex: 1, backgroundColor: bgLocationEnabled ? '#2E7D32' : '#9E9E9E' }]}
+                  onPress={() => setBgLocationEnabled(!bgLocationEnabled)}
+                >
+                  <Text style={styles.buttonText}>{bgLocationEnabled ? 'Ativado' : 'Desativado'}</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.text, { fontSize: 12, color: '#555', marginTop: 6 }]}>Ative para manter rastreamento mesmo sem Wi‑Fi ou com a tela desligada. No Android, recomenda-se remover otimização de bateria.</Text>
+              <TouchableOpacity
+                style={[styles.mapButton, { marginTop: 10, backgroundColor: androidBoosted ? '#4CAF50' : '#8B5C2A' }]}
+                onPress={ativarModoAndroidAvancado}
+              >
+                <Text style={styles.buttonText}>{androidBoosted ? '✅ Otimização Aplicada' : '⚡ Aplicar tudo (Android)'}</Text>
+              </TouchableOpacity>
+              {Platform.OS === 'android' && androidBoosted && (
+                <Text style={[styles.text, { fontSize: 11, color: '#2E7D32', marginTop: 6 }]}>✔ Modo preciso • ✔ Fundo ativo • Abra a tela de bateria e marque “Sem restrições”.</Text>
+              )}
+            </View>
           </View>
 
           <TouchableOpacity 
@@ -3351,7 +3359,7 @@ const styles = StyleSheet.create({
   },
   miniCompassWrapper: {
     position: 'absolute',
-    top: 162, // + ~2mm (~12dp) para descer mais
+    top: 80,
     right: 10,
     alignItems: 'center',
     zIndex: 100,
@@ -3433,7 +3441,7 @@ const styles = StyleSheet.create({
   mapControls: {
     flexDirection: 'row',
     padding: 10,
-    backgroundColor: '#c5e1c9', // verde mais escuro
+    backgroundColor: '#fff',
     gap: 10,
   },
   mapButton: {
@@ -3449,10 +3457,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#00AA00',
   },
   mapInfo: {
-    backgroundColor: '#c5e1c9', // verde mais escuro
+    backgroundColor: '#fff',
     padding: 10,
     borderTopWidth: 1,
-    borderTopColor: '#9fbf9d',
+    borderTopColor: '#ddd',
   },
   infoText: {
     fontSize: 13,
@@ -3588,39 +3596,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     gap: 10,
   },
-});
-
-// Estilos para Modo Escuro (economia de bateria / AMOLED)
-const darkStyles = StyleSheet.create({
-  container: {
-    backgroundColor: '#121212'
-  },
-  header: {
-    backgroundColor: '#1E1E1E'
-  },
-  title: {
-    color: '#FAFAFA'
-  },
-  subtitle: {
-    color: '#B0B0B0'
-  },
-  card: {
-    backgroundColor: '#1E1E1E'
-  },
-  cardTitle: {
-    color: '#E0E0E0'
-  },
-  text: {
-    color: '#D0D0D0'
-  },
-  buttonPrimary: {
-    backgroundColor: '#3A3A3A'
-  },
-  mapControls: {
-    backgroundColor: '#1E1E1E'
-  },
-  mapInfo: {
-    backgroundColor: '#1E1E1E',
-    borderTopColor: '#2A2A2A'
-  }
 });
