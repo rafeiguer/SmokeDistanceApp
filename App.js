@@ -20,6 +20,7 @@ const deg2rad = Math.PI / 180;
 let sfSeq = 0; // sequência para IDs únicos simulados
 const AUTO_BOUNCE_INTERVAL_MS = 15000; // no máximo 1 bounce a cada 15s
 const BG_TASK_NAME = 'smokedistance-location-updates';
+const isExpoGo = Constants?.appOwnership === 'expo';
 
 const SafeOps = {
   parseNumber: (value, fallback = 0) => {
@@ -116,100 +117,100 @@ async function prepararDadosParaEnvio(focos, localizacao) {
 async function encontrarTrilhasProximas(userLatitude, userLongitude, focusLatitude, focusLongitude) {
   try {
     console.log(`🥾 Calculando rota do usuário até o foco via OSRM...`);
-    
+
     // Validar coordenadas do usuário
     if (!userLatitude || !userLongitude) {
       console.warn('⚠️ Localização do usuário não disponível');
       throw new Error('No user location');
     }
-    
+
     // OSRM retorna rota pelos caminhos existentes (OpenStreetMap)
     // Formato: lon,lat (nota: OSRM usa lon,lat não lat,lon)
     const osrmUrl = `https://router.project-osrm.org/route/v1/walking/${userLongitude},${userLatitude};${focusLongitude},${focusLatitude}?geometries=geojson&overview=full&steps=true`;
-    
+
     console.log(`📡 Buscando rota via OSRM...`);
-    
+
     const response = await fetch(osrmUrl);
-    
+
     if (!response.ok) {
       console.warn(`⚠️ OSRM retornou ${response.status}`);
       throw new Error(`HTTP ${response.status}`);
     }
-    
+
     const data = await response.json();
-    
+
     if (data.code !== 'Ok') {
       console.warn(`⚠️ OSRM code: ${data.code}`);
       throw new Error(`OSRM: ${data.code}`);
     }
-    
+
     if (!data.routes || data.routes.length === 0) {
       console.warn('⚠️ Nenhuma rota encontrada');
       throw new Error('No routes found');
     }
-    
+
     const route = data.routes[0];
     const geometry = route.geometry;
-    
+
     // Converter GeoJSON geometry para array de coords
     const coordinates = geometry.coordinates.map(coord => ({
       latitude: coord[1],  // GeoJSON usa [lon, lat]
       longitude: coord[0]
     }));
-    
+
     const distanceKm = (route.distance / 1000).toFixed(2);
     const durationMin = Math.round(route.duration / 60);
-    
+
     console.log(`✅ Rota encontrada com ${coordinates.length} pontos`);
     console.log(`📍 Distância: ${distanceKm}km, Tempo: ${durationMin}min`);
-    
+
     // Retornar apenas UMA rota
     return [{
       id: 'route-main',
       coordinates: coordinates,
       distance: route.distance,
       type: 'way',
-      tags: { 
+      tags: {
         name: 'Rota até o Foco',
         distance: `${distanceKm}km`,
         duration: `${durationMin}min`
       }
     }];
-    
+
   } catch (err) {
     console.error('❌ Erro ao buscar rota OSRM:', err.message);
-    
+
     // Tentar GraphHopper como fallback secundário
     try {
       console.log('🔄 Tentando fallback com GraphHopper...');
-      
+
       const ghUrl = `https://graphhopper.com/api/1/route?point=${userLatitude},${userLongitude}&point=${focusLatitude},${focusLongitude}&profile=foot&locale=pt&key=6e7e76e1-7e59-40a6-8352-c34c8f1dc0d6`;
-      
+
       const ghResponse = await fetch(ghUrl);
-      
+
       if (ghResponse.ok) {
         const ghData = await ghResponse.json();
-        
+
         if (ghData.paths && ghData.paths.length > 0) {
           const path = ghData.paths[0];
-          
+
           if (path.points && path.points.coordinates) {
             const coordinates = path.points.coordinates.map(coord => ({
               latitude: coord[1],
               longitude: coord[0]
             }));
-            
+
             const distanceKm = (path.distance / 1000).toFixed(2);
             const durationMin = Math.round(path.time / 60000);
-            
+
             console.log(`✅ Rota GraphHopper encontrada com ${coordinates.length} pontos`);
-            
+
             return [{
               id: 'route-graphhopper',
               coordinates: coordinates,
               distance: path.distance,
               type: 'way',
-              tags: { 
+              tags: {
                 name: 'Rota até o Foco (GraphHopper)',
                 distance: `${distanceKm}km`,
                 duration: `${durationMin}min`
@@ -221,25 +222,25 @@ async function encontrarTrilhasProximas(userLatitude, userLongitude, focusLatitu
     } catch (ghErr) {
       console.warn('⚠️ GraphHopper também falhou:', ghErr.message);
     }
-    
+
     // Último fallback: linha reta com alguns pontos intermediários
     console.log('📋 Usando rota simulada como fallback final...');
-    
+
     const coordinates = [];
     const steps = 20;
-    
+
     // Interpolar entre usuário e foco
     for (let i = 0; i <= steps; i++) {
       const ratio = i / steps;
-      
+
       coordinates.push({
         latitude: userLatitude + (focusLatitude - userLatitude) * ratio,
         longitude: userLongitude + (focusLongitude - userLongitude) * ratio
       });
     }
-    
+
     const distance = calculateDistanceHaversine(userLatitude, userLongitude, focusLatitude, focusLongitude);
-    
+
     return [{
       id: 'fallback-route',
       coordinates: coordinates,
@@ -254,22 +255,22 @@ async function encontrarTrilhasProximas(userLatitude, userLongitude, focusLatitu
 async function obterDadosMeteologicos(latitude, longitude) {
   try {
     console.log(`🌤️ Consultando dados meteorológicos para ${latitude}, ${longitude}...`);
-    
+
     // Usar Open-Meteo que é gratuito e sem autenticação
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m&timezone=auto`;
     console.log(`📡 URL: ${url}`);
-    
+
     const response = await fetch(url);
     console.log(`📊 Status da resposta: ${response.status}`);
-    
+
     if (!response.ok) {
       console.warn(`⚠️ Open-Meteo retornou status ${response.status}`);
       throw new Error(`HTTP ${response.status}`);
     }
-    
+
     const data = await response.json();
     console.log(`📦 Dados recebidos:`, JSON.stringify(data).substring(0, 200));
-    
+
     if (!data.current) {
       console.warn('⚠️ Dados sem propriedade "current"');
       throw new Error('No current data in response');
@@ -634,7 +635,9 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [heading, setHeading] = useState(0);
   const [smoothHeading, setSmoothHeading] = useState(0);
-  const [networkMarker, setNetworkMarker] = useState(null);
+  const [networkMarker, setNetworkMarker] = useState(null); // marcador temporário de status de rede
+  const [fixedCenterMarker, setFixedCenterMarker] = useState(null); // ping fixo do centro (permanece)
+  const [showFocos, setShowFocos] = useState(false); // controlar exibição dos focos marcados
   const [waterMarkers, setWaterMarkers] = useState([]);
   const [markingMode, setMarkingMode] = useState(false);
   const [pendingFireData, setPendingFireData] = useState(null);
@@ -704,6 +707,8 @@ export default function App() {
   const recenterDelayRef = useRef(null);
   const recenterAutoHideRef = useRef(null);
   const lastKnownRef = useRef(null);
+  const lastInteractionRef = useRef(0);
+  const lastConnRef = useRef(null);
 
   // Valor seguro para evitar undefined
   const safeInputsManualFoco = inputsManualFoco || {
@@ -755,6 +760,7 @@ export default function App() {
 
     const novosFocos = [...focos, novoFoco];
     setFocos(novosFocos);
+    setShowFocos(true); // ao marcar o primeiro foco, garantir visibilidade
     // Enfileira para backend quando online voltar
     enqueuePing(novoFoco);
     console.log('✅ Foco adicionado:', novoFoco.observadorId);
@@ -1079,7 +1085,11 @@ export default function App() {
     })();
   }, []);
 
-  const MIN_RADIUS_FOR_CIRCLE = 300; // metros: evita ruído urbano
+  const MIN_RADIUS_FOR_CIRCLE = 0; // sem mínimo para o primeiro círculo
+  const latestCoverageTs = React.useMemo(() =>
+    coverageCircles.reduce((m, c) => Math.max(m, c?.timestamp || 0), 0),
+    [coverageCircles]
+  );
 
   async function shouldSkipCircle(edge) {
     // Heurística simples: se reverse geocode indicar cidade/rua, considerar urbano
@@ -1104,9 +1114,16 @@ export default function App() {
     if (!center || !edge) return;
     const radius = calculateDistanceHaversine(center.latitude, center.longitude, edge.latitude, edge.longitude);
     if (!isFinite(radius) || radius <= 0) return;
-    if (radius < MIN_RADIUS_FOR_CIRCLE) return; // muito pequeno, ignora
     const urban = await shouldSkipCircle(edge);
     if (urban) return; // evitar áreas urbanas para não sobrecarregar
+    // Evitar sobreposição: exigir pelo menos 50m do último círculo
+    if (coverageCircles.length > 0) {
+      const last = coverageCircles[coverageCircles.length - 1];
+      const distLast = calculateDistanceHaversine(last.center.latitude, last.center.longitude, center.latitude, center.longitude);
+      if (isFinite(distLast) && distLast < 50) {
+        return;
+      }
+    }
     const circle = {
       id: Date.now(),
       center: { latitude: center.latitude, longitude: center.longitude },
@@ -1156,14 +1173,21 @@ export default function App() {
                 const reg = {
                   latitude: pos.coords.latitude,
                   longitude: pos.coords.longitude,
-                  latitudeDelta: 0.01,
-                  longitudeDelta: 0.01,
+                  // Preserve current zoom while seguindo usuário
+                  latitudeDelta: currentRegion?.latitudeDelta ?? 0.02,
+                  longitudeDelta: currentRegion?.longitudeDelta ?? 0.02,
                 };
-                try { mapRef.current.animateToRegion(reg, 500); } catch {}
-                setNeedsRecenter(false);
-                setRecenterVisible(false);
+                const now = Date.now();
+                const recentlyInteracted = now - (lastInteractionRef.current || 0) < 2500;
+                if (!recentlyInteracted) {
+                  try { mapRef.current.animateToRegion(reg, 500); } catch {}
+                  setNeedsRecenter(false);
+                  setRecenterVisible(false);
+                } else {
+                  setNeedsRecenter(true);
+                }
               } else if (!followUser && mapRef?.current && currentRegion) {
-                // Bounce de segurança: se usuário saiu muito do quadro, recenter suavemente
+                // Não alterar zoom nem recentralizar automaticamente; apenas sinalizar botão
                 const metersPerDegLat = 111000;
                 const metersPerDegLon = 111000 * Math.cos((currentRegion.latitude * Math.PI) / 180);
                 const halfHeightM = (currentRegion.latitudeDelta || 0.02) * metersPerDegLat * 0.5;
@@ -1178,16 +1202,7 @@ export default function App() {
                 const now = Date.now();
                 const isFar = dist > Math.max(limit * 1.2, 1200);
                 setNeedsRecenter(isFar);
-                if (dist > limit && now - lastAutoBounceRef.current > AUTO_BOUNCE_INTERVAL_MS) {
-                  lastAutoBounceRef.current = now;
-                  const reg2 = {
-                    latitude: pos.coords.latitude,
-                    longitude: pos.coords.longitude,
-                    latitudeDelta: currentRegion.latitudeDelta || 0.02,
-                    longitudeDelta: currentRegion.longitudeDelta || 0.02,
-                  };
-                  try { mapRef.current.animateToRegion(reg2, 600); } catch {}
-                }
+                // Nunca alterar a região automaticamente quando followUser=false
               }
             } else {
               // Sem coords no callback (GPS momentaneamente indisponível): manter seguindo usando última posição conhecida
@@ -1212,32 +1227,34 @@ export default function App() {
     };
   }, [followUser, currentRegion, gpsMode]);
 
-  // Registrar a task de localização em segundo plano (uma vez)
-  try {
-    TaskManager.isTaskRegisteredAsync(BG_TASK_NAME).then((registered) => {
-      if (!registered) {
-        TaskManager.defineTask(BG_TASK_NAME, ({ data, error }) => {
-          if (error) return;
-          const { locations } = data || {};
-          if (locations && locations.length > 0) {
-            const loc = locations[0];
-            const coords = loc.coords;
-            if (coords) {
-              // Atualiza estado mínimo para manter follow e breadcrumbs
-              setLocation(prev => {
-                if (!prev) return coords;
-                const moved = Math.abs(prev.latitude - coords.latitude) > 0.000005 || Math.abs(prev.longitude - coords.longitude) > 0.000005;
-                return moved ? coords : prev;
-              });
+  // Registrar a task de localização em segundo plano (somente Android e fora do Expo Go)
+  if (Platform.OS === 'android' && !isExpoGo) {
+    try {
+      TaskManager.isTaskRegisteredAsync(BG_TASK_NAME).then((registered) => {
+        if (!registered) {
+          TaskManager.defineTask(BG_TASK_NAME, ({ data, error }) => {
+            if (error) return;
+            const { locations } = data || {};
+            if (locations && locations.length > 0) {
+              const loc = locations[0];
+              const coords = loc.coords;
+              if (coords) {
+                setLocation(prev => {
+                  if (!prev) return coords;
+                  const moved = Math.abs(prev.latitude - coords.latitude) > 0.000005 || Math.abs(prev.longitude - coords.longitude) > 0.000005;
+                  return moved ? coords : prev;
+                });
+              }
             }
-          }
-        });
-      }
-    });
-  } catch {}
+          });
+        }
+      });
+    } catch {}
+  }
 
-  // Iniciar/parar atualizações de localização em segundo plano conforme toggle
+  // Iniciar/parar atualizações de localização em segundo plano (somente Android e fora do Expo Go)
   useEffect(() => {
+    if (Platform.OS !== 'android' || isExpoGo) return;
     (async () => {
       try {
         const hasPerm = await Location.getForegroundPermissionsAsync();
@@ -1245,11 +1262,9 @@ export default function App() {
           const req = await Location.requestForegroundPermissionsAsync();
           if (!req.granted) return;
         }
-        // Android exige permissão de background separada
         const bgPerm = await Location.getBackgroundPermissionsAsync();
         if (!bgPerm.granted) {
-          const reqBg = await Location.requestBackgroundPermissionsAsync();
-          // Mesmo se negar, seguimos sem fundo
+          await Location.requestBackgroundPermissionsAsync();
         }
         const cfg = (function() {
           if (gpsMode === 'eco') {
@@ -1398,36 +1413,81 @@ export default function App() {
   // Monitorar conectividade (apenas informa status)
   useEffect(() => {
     try {
+      // Estado inicial de rede + preparar marcador dependendo do estado atual
+      NetInfo.fetch()
+        .then((state) => {
+          const cur = !!state.isConnected;
+          setIsConnected(cur);
+          lastConnRef.current = cur;
+          // Não definir centro automaticamente ao iniciar conectado; só quando a rede volta após queda
+          if (!cur && location) {
+            // Se já inicia offline, marcar última localização conhecida
+            setLastKnownLocationBeforeDisconnect(location);
+            setDisconnectTime(Date.now());
+            setLastBreadcrumbLocation(location);
+          }
+        })
+        .catch(() => {});
+
       const unsubscribe = NetInfo.addEventListener(state => {
         try {
           console.log("🌐 Status Rede:", state.isConnected ? "Conectado" : "Desconectado", state.type);
-          
-          // Se desconectando e temos localização, guardar última localização conhecida
-          if (!state.isConnected && isConnected && location) {
+          const prev = lastConnRef.current;
+          lastConnRef.current = state.isConnected;
+
+          // Ao perder o sinal: apenas registrar estado, não fixar centro
+          if (prev === true && state.isConnected === false && location) {
             console.log("📍 Rede caiu! Congelando última localização conhecida...");
             setLastKnownLocationBeforeDisconnect(location);
-            setDisconnectTime(Date.now()); // Registrar quando desconectou
-            setLastBreadcrumbLocation(location); // Inicializar para comparar distância depois
-                // Finalizar círculo de cobertura usando melhor centro disponível
-                (async () => {
-                  try {
-                    const center = coverageCenter || lastKnownRef.current || location;
-                    await addCoverageCircleIfValid(center, location);
-                  } finally {
-                    setCoverageCenter(null);
-                  }
-                })();
+            setDisconnectTime(Date.now());
+            setLastBreadcrumbLocation(location);
+            // Se já existe centro, fechar círculo com raio até a perda
+            (async () => {
+              try {
+                if (coverageCenter) {
+                  await addCoverageCircleIfValid(coverageCenter, location);
+                  setCoverageCenter(null);
+                  console.log('⭕ Círculo fechado do centro até a perda de sinal.');
+                }
+              } catch (e) {
+                console.warn('⚠️ Erro ao fechar círculo na perda:', e?.message);
+              }
+            })();
           }
           
-          // Se conectando, limpar último localização congelada (mas MANTER breadcrumbs!)
-          if (state.isConnected && !isConnected) {
+          // Se conectou agora, limpar marcador congelado (mas manter breadcrumbs)
+          if (prev === false && state.isConnected === true) {
             console.log("📍 Rede restaurada! Removendo marcador congelado...");
             setLastKnownLocationBeforeDisconnect(null);
             setDisconnectTime(null);
             // NÃO limpar breadcrumbs - eles ficam permanentes como dados públicos!
             setLastBreadcrumbLocation(null);
-            // Definir centro de cobertura no momento da conexão
-            if (location) setCoverageCenter(location);
+            // Definir centro de cobertura no momento da VOLTA do sinal (se não houver)
+            if (location && !coverageCenter && !fixedCenterMarker) {
+              (async () => {
+                try {
+                  // Respeitar espaçamento de 50m em relação ao último círculo
+                  let ok = true;
+                  if (coverageCircles.length > 0) {
+                    const last = coverageCircles[coverageCircles.length - 1];
+                    const d = calculateDistanceHaversine(last.center.latitude, last.center.longitude, location.latitude, location.longitude);
+                    if (isFinite(d) && d < 50) ok = false;
+                  }
+                  if (ok) {
+                    setCoverageCenter(location);
+                    setFixedCenterMarker({
+                      latitude: location.latitude,
+                      longitude: location.longitude,
+                      title: '📍 Centro de Sinal',
+                      description: 'Local onde o sinal voltou (ping fixo).'
+                    });
+                    console.log('✅ Centro fixado na reconexão. Próxima queda fechará círculo.');
+                  } else {
+                    console.log('↔️ Centro não fixado: muito próximo do último círculo (<50m).');
+                  }
+                } catch {}
+              })();
+            }
                       // Drenar pings pendentes
                       (async () => { try { await syncPendingPings(); } catch {} })();
           }
@@ -1437,16 +1497,14 @@ export default function App() {
           // SE CONECTOU À REDE, TEM FOCO MARCADO (observação ou temporário) E TEM LOCALIZAÇÃO, MARCAR NO MAPA
           const temFocoMarcado = focos.length > 0 || waypointTemporario;
           if (state.isConnected && location && temFocoMarcado) {
-            console.log("✅ Rede conectada com foco ativo! Marcando ponto de sinal...");
-            
             setNetworkMarker({
               latitude: location.latitude,
               longitude: location.longitude,
-              title: `📶 Sinal de Rede: ${state.type}`,
-              description: `Rede conectada!\nTipo: ${state.type}\nLat: ${location.latitude.toFixed(4)}\nLon: ${location.longitude.toFixed(4)}`
+              title: `📶 Rede: ${state.type}`,
+              description: 'Status de rede temporário.'
             });
-            
-            console.log('✅ Sinal de rede marcado no mapa!');
+          } else if (!state.isConnected) {
+            setNetworkMarker(null); // remove temporário ao cair
           }
         } catch (err) {
           console.warn("⚠️ Erro ao processar estado de rede:", err.message);
@@ -2105,10 +2163,11 @@ export default function App() {
 
             <View style={{ position: 'relative', height: 500 }}>
               <MapView
-                provider="google"
+                provider={Platform.OS === 'android' ? 'google' : undefined}
                 ref={mapRef}
                 style={[styles.map, { height: 500 }]}
                 mapType={mapaCamera || initialMapType}
+                onPanDrag={() => { lastInteractionRef.current = Date.now(); }}
                 initialRegion={{
                   latitude: location.latitude,
                   longitude: location.longitude,
@@ -2265,7 +2324,7 @@ export default function App() {
                     justifyContent: 'center',
                     alignItems: 'center',
                     borderWidth: 2,
-                    borderColor: '#FFFFFF',
+                    borderColor: '#FF8A80',
                     shadowColor: '#000000',
                     shadowOffset: { width: 0, height: 2 },
                     shadowOpacity: 0.25,
@@ -2273,21 +2332,23 @@ export default function App() {
                     elevation: 5
                   }}>
                     <View style={{ flexDirection: 'row', gap: 1.5, alignItems: 'flex-end' }}>
-                      <View style={{ width: 2.5, height: 6, backgroundColor: '#FFFFFF', borderRadius: 1.25 }} />
-                      <View style={{ width: 2.5, height: 9, backgroundColor: '#FFFFFF', borderRadius: 1.25 }} />
-                      <View style={{ width: 2.5, height: 12, backgroundColor: '#FFFFFF', borderRadius: 1.25 }} />
-                      <View style={{ width: 2.5, height: 15, backgroundColor: '#FFFFFF', borderRadius: 1.25 }} />
+                      <View style={{ width: 2.5, height: 6, backgroundColor: '#FF8A80', borderRadius: 1.25 }} />
+                      <View style={{ width: 2.5, height: 9, backgroundColor: '#FF8A80', borderRadius: 1.25 }} />
+                      <View style={{ width: 2.5, height: 12, backgroundColor: '#FF8A80', borderRadius: 1.25 }} />
+                      <View style={{ width: 2.5, height: 15, backgroundColor: '#FF8A80', borderRadius: 1.25 }} />
                     </View>
                     <View style={{
                       position: 'absolute',
                       width: 32,
                       height: 1.5,
-                      backgroundColor: '#FF4444',
+                      backgroundColor: '#FF8A80',
+                      opacity: 0.85,
                       transform: [{ rotate: '45deg' }]
                     }} />
                   </View>
                 </Marker>
               )}
+              {/* Sem círculo dinâmico: círculos são fixados no momento da queda e ficam persistidos */}
               
               {/* Marcador de sinal de rede (automático) */}
               {networkMarker && (
@@ -2324,6 +2385,49 @@ export default function App() {
                 </Marker>
               )}
 
+              {/* 📍 Ping fixo do centro de sinal (permanece) */}
+              {fixedCenterMarker && (
+                <Marker
+                  coordinate={{
+                    latitude: fixedCenterMarker.latitude,
+                    longitude: fixedCenterMarker.longitude
+                  }}
+                  title={fixedCenterMarker.title}
+                  description={fixedCenterMarker.description}
+                >
+                  <View style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 22,
+                    backgroundColor: '#000',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderWidth: 2,
+                    borderColor: '#FF0000',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 3,
+                    elevation: 6
+                  }}>
+                    <View style={{ flexDirection: 'row', gap: 1.4, alignItems: 'flex-end' }}>
+                      <View style={{ width: 2.6, height: 6, backgroundColor: '#FF0000', borderRadius: 1.3 }} />
+                      <View style={{ width: 2.6, height: 9, backgroundColor: '#FF0000', borderRadius: 1.3 }} />
+                      <View style={{ width: 2.6, height: 12, backgroundColor: '#FF0000', borderRadius: 1.3 }} />
+                      <View style={{ width: 2.6, height: 15, backgroundColor: '#FF0000', borderRadius: 1.3 }} />
+                    </View>
+                    <View style={{
+                      position: 'absolute',
+                      width: 34,
+                      height: 2,
+                      backgroundColor: 'rgba(255,0,0,0.85)',
+                      transform: [{ rotate: '45deg' }],
+                      borderRadius: 1
+                    }} />
+                  </View>
+                </Marker>
+              )}
+
               {/* 🔥 Focos por Satélite (overlay) */}
                             {showCommunityPings && communityPings
                               .filter(p => location ? calculateDistanceHaversine(location.latitude, location.longitude, p.latitude, p.longitude) <= 200000 : true)
@@ -2348,18 +2452,61 @@ export default function App() {
                 </Marker>
               ))}
 
-              {/* 📶 Círculos de cobertura persistentes */}
-              {coverageCircles.map((c) => (
-                <Circle
-                  key={c.id}
-                  center={{ latitude: c.center.latitude, longitude: c.center.longitude }}
-                  radius={c.radius}
-                  strokeWidth={2}
-                  strokeColor="rgba(0, 150, 255, 0.9)"
-                  fillColor="rgba(0, 150, 255, 0.15)"
-                  zIndex={1}
-                />
-              ))}
+              {/* 📶 Círculo de cobertura: mostrar apenas o último, e somente quando offline */}
+              {(!isConnected && disconnectTime && latestCoverageTs > 0) && (() => {
+                const lastCircle = coverageCircles.find(c => c.timestamp === latestCoverageTs);
+                if (!lastCircle) return null;
+                return (
+                  <Circle
+                    key={lastCircle.id}
+                    center={{ latitude: lastCircle.center.latitude, longitude: lastCircle.center.longitude }}
+                    radius={lastCircle.radius}
+                    strokeWidth={2}
+                    strokeColor={'rgba(255, 0, 0, 0.9)'}
+                    fillColor={'rgba(255, 0, 0, 0.15)'}
+                    zIndex={1}
+                  />
+                );
+              })()}
+
+              {/* Ping fixo no centro do último círculo ao perder o sinal */}
+              {(!isConnected && disconnectTime && latestCoverageTs > 0) && (() => {
+                const lastCircle = coverageCircles.find(c => c.timestamp === latestCoverageTs);
+                if (!lastCircle) return null;
+                return (
+                  <Marker
+                    coordinate={{
+                      latitude: lastCircle.center.latitude,
+                      longitude: lastCircle.center.longitude,
+                    }}
+                    title={'📍 Ponto de Sinal (Centro)'}
+                    description={'Centro fixo quando havia sinal; círculo envolve até o ponto de perda.'}
+                  >
+                    <View style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: '#000',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      borderWidth: 2,
+                      borderColor: '#FF0000',
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.25,
+                      shadowRadius: 3,
+                      elevation: 4,
+                    }}>
+                      <View style={{ flexDirection: 'row', gap: 1.2, alignItems: 'flex-end' }}>
+                        <View style={{ width: 2, height: 6, backgroundColor: '#FF0000', borderRadius: 1 }} />
+                        <View style={{ width: 2, height: 9, backgroundColor: '#FF0000', borderRadius: 1 }} />
+                        <View style={{ width: 2, height: 12, backgroundColor: '#FF0000', borderRadius: 1 }} />
+                        <View style={{ width: 2, height: 15, backgroundColor: '#FF0000', borderRadius: 1 }} />
+                      </View>
+                    </View>
+                  </Marker>
+                );
+              })()}
 
               {/* 🍞 Breadcrumbs - Migalhas de sinal deixadas durante viagem sem rede */}
               {breadcrumbs.map((breadcrumb) => (
@@ -2434,8 +2581,8 @@ export default function App() {
                 />
               ))}
 
-              {/* Marcadores de Focos (Observações para Triangulação) */}
-              {focos.map((foco, idx) => (
+              {/* Marcadores de Focos (Observações para Triangulação) - só se visível */}
+              {showFocos && focos.map((foco, idx) => (
                 <Marker
                   key={foco.id}
                   coordinate={{
@@ -2647,14 +2794,14 @@ export default function App() {
                   </View>
                   
                   {/* Círculo interno */}
-                  <View style={styles.miniCompass} />
-                </View>
-              </View>
-              <Text style={styles.miniHeadingText}>{(Math.round(smoothHeading) % 360) || 0}°</Text>
-            </TouchableOpacity>
+                      <View style={styles.miniCompass} />
+                    </View>
+                  </View>
+                  <Text style={styles.miniHeadingText}>{(Math.round(smoothHeading) % 360) || 0}°</Text>
+                </TouchableOpacity>
 
-            {/* Controles do Mapa */}
-            <View style={styles.mapControls}>
+                {/* Controles do Mapa */}
+                <View style={styles.mapControls}>
               <TouchableOpacity
                 style={[
                   styles.mapButton,
@@ -2688,6 +2835,8 @@ export default function App() {
                   {markingMode ? '✅ Modo Ativo' : '💧 Marcar Poço'}
                 </Text>
               </TouchableOpacity>
+
+              {/* Bússola sempre visível — toggle removido */}
 
               <TouchableOpacity
                 style={styles.mapButton}
@@ -2754,7 +2903,7 @@ export default function App() {
                   </Text>
                 </>
               )}
-              {focos.length > 0 && (
+              {(showFocos && focos.length > 0) && (
                 <>
                   <Text style={[styles.infoText, { fontWeight: 'bold', marginTop: 10, color: '#4CAF50' }]}>
                     ✅ INFORMAÇÕES SALVAS COM SUCESSO!
@@ -3359,60 +3508,73 @@ const styles = StyleSheet.create({
   },
   miniCompassWrapper: {
     position: 'absolute',
-    top: 80,
+    // Fixo no canto inferior direito da tela
+    bottom: 230,
     right: 10,
     alignItems: 'center',
-    zIndex: 100,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    zIndex: 9999,
+    pointerEvents: 'none',
+    // Softer translucent green background
+    backgroundColor: 'rgba(76, 175, 80, 0.22)',
+    // Subtle square frame with 3D shadow
+    borderWidth: 1,
+    borderColor: '#66BB6A',
     borderRadius: 8,
     padding: 6,
-    elevation: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.12,
     shadowRadius: 3,
+    elevation: 8,
   },
   miniRoseContainer: {
     position: 'relative',
-    width: 90,
-    height: 90,
+    width: 80,
+    height: 80,
     justifyContent: 'center',
     alignItems: 'center',
   },
   crossVertical: {
     position: 'absolute',
     width: 1,
-    height: 80,
-    backgroundColor: '#FF6B6B',
+    height: 72,
+    backgroundColor: '#FFFFFF',
     zIndex: 5,
   },
   crossHorizontal: {
     position: 'absolute',
-    width: 80,
+    width: 72,
     height: 1,
-    backgroundColor: '#FF6B6B',
+    backgroundColor: '#FFFFFF',
     zIndex: 5,
   },
   compassRing: {
     position: 'absolute',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     borderWidth: 2,
-    borderColor: '#1E90FF',
+    // Red ring for compass circle
+    borderColor: '#FF0000',
+    // Subtle 3D edge shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
   },
   rotatingGroup: {
     position: 'absolute',
-    width: 80,
-    height: 80,
+    width: 72,
+    height: 72,
     justifyContent: 'center',
     alignItems: 'center',
   },
   nRotator: {
     position: 'absolute',
     top: -5,
-    width: 20,
-    height: 20,
+    width: 18,
+    height: 18,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -3423,9 +3585,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   miniCompassNorth: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
-    color: '#FF6B6B',
+    color: '#FFFFFF',
   },
   miniRoseText: {
     position: 'absolute',
@@ -3435,7 +3597,7 @@ const styles = StyleSheet.create({
   miniHeadingText: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#FFFFFF',
     marginTop: 4,
   },
   mapControls: {
