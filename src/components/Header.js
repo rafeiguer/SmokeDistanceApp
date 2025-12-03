@@ -1,9 +1,23 @@
-import React from 'react';
+import React from "react";
+import { View, Text, StyleSheet } from "react-native";
 
 export default function Header() {
   return (
-    <header>
-      <h1>SmokeDistance</h1>
-    </header>
+    <View style={styles.header}>
+      <Text style={styles.title}>SmokeDistance</Text>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  header: {
+    padding: 20,
+    backgroundColor: "#222",
+    alignItems: "center",
+  },
+  title: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "bold",
+  },
+});

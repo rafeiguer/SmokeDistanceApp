@@ -17,5 +17,16 @@
   "editor.insertSpaces": true,
   "editor.tabSize": 2,
   "prettier.enable": false,
-  "editor.defaultFormatter": null
+  "editor.defaultFormatter": null,
+
+  // 🔧 otimizações extras
+  "editor.minimap.enabled": false,
+  "editor.largeFileOptimizations": true,
+  "editor.renderWhitespace": "none",
+  "editor.renderControlCharacters": false,
+  "files.maxMemoryForLargeFilesMB": 4096,
+  "extensions.autoUpdate": false,
+  "search.followSymlinks": false,
+  "telemetry.enableTelemetry": false,
+  "telemetry.enableCrashReporter": false
 }
