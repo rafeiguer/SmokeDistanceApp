@@ -10,6 +10,7 @@ import * as ImagePicker from "expo-image-picker";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Accelerometer } from "expo-sensors";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { salvarFocosStorage, carregarFocosStorage, exportarFocosJSON } from './src/services/focosStorage';
 import Constants from 'expo-constants';
 import { registerForPushNotificationsAsync } from './src/notifications';
 import { getDb } from './src/firebase';
@@ -29,89 +30,6 @@ const SafeOps = {
   },
 };
 
-// 💾 SALVAR FOCOS NO ASYNCSTORAGE (persistente)
-async function salvarFocosStorage(focos) {
-  try {
-    await AsyncStorage.setItem('focos_salvos', JSON.stringify(focos));
-    console.log('💾 Focos salvos no storage:', focos.length);
-  } catch (err) {
-    console.error('❌ Erro ao salvar focos:', err);
-  }
-}
-
-// 📖 CARREGAR FOCOS DO ASYNCSTORAGE
-async function carregarFocosStorage() {
-  try {
-    const dados = await AsyncStorage.getItem('focos_salvos');
-    if (dados) {
-      const focos = JSON.parse(dados);
-      console.log('📖 Focos carregados do storage:', focos.length);
-      return focos;
-    }
-    return [];
-  } catch (err) {
-    console.error('❌ Erro ao carregar focos:', err);
-    return [];
-  }
-}
-
-// 📤 EXPORTAR FOCOS PARA JSON (para compartilhar/enviar)
-async function exportarFocosJSON(focos, localizacao) {
-  try {
-    const dataExporte = {
-      timestamp: new Date().toISOString(),
-      app: 'SmokeDistance v1.0.0',
-      usuarioLocalizacao: {
-        latitude: localizacao?.latitude || 0,
-        longitude: localizacao?.longitude || 0,
-        altitude: localizacao?.altitude || 0
-      },
-      focos: focos.map((foco, idx) => ({
-        numero: idx + 1,
-        observador: foco.observadorId,
-        latitude: foco.latitude,
-        longitude: foco.longitude,
-        altitude: foco.altitude,
-        distancia_metros: foco.distancia,
-        heading: foco.heading,
-        pitch: foco.pitch,
-        timestamp: foco.timestamp
-      })),
-      totalFocos: focos.length,
-      dataExportacao: new Date().toLocaleString('pt-BR')
-    };
-    
-    const jsonString = JSON.stringify(dataExporte, null, 2);
-    console.log('📤 JSON exportado:', jsonString);
-    return jsonString;
-  } catch (err) {
-    console.error('❌ Erro ao exportar:', err);
-    return null;
-  }
-}
-
-// 📧 PREPARAR DADOS PARA ENVIO VIA EMAIL/API
-async function prepararDadosParaEnvio(focos, localizacao) {
-  try {
-    const jsonString = await exportarFocosJSON(focos, localizacao);
-    
-    if (!jsonString) return null;
-    
-    // Criar objeto para envio
-    const dadosEnvio = {
-      arquivo: `focos_${Date.now()}.json`,
-      conteudo: jsonString,
-      totalFocos: focos.length,
-      dataEnvio: new Date().toISOString()
-    };
-    
-    console.log('📧 Dados preparados para envio');
-    return dadosEnvio;
-  } catch (err) {
-    console.error('❌ Erro ao preparar:', err);
-    return null;
-  }
-}
 
 // 🥾 ENCONTRAR ROTA ATÉ O FOCO (OSRM - Open Street Routing Machine)
 async function encontrarTrilhasProximas(userLatitude, userLongitude, focusLatitude, focusLongitude) {
