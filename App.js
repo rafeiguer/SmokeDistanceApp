@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text } from 'react-native';
 
 // ===== IMPORTS DOS HOOKS =====
 import { useLocation } from './src/hooks/useLocation';
@@ -90,8 +90,27 @@ export default function App() {
     case 2:
       return (
         <MapScreen
+          location={locationData.location}
+          focos={focosData.focos}
+          triangulacaoResultado={focosData.triangulacaoResultado}
+          waypointTemporario={focosData.waypointTemporario}
+          smoothHeading={compassData.smoothHeading}
+          isConnected={networkData.isConnected}
+          networkMarker={networkData.networkMarker}
+          breadcrumbs={locationData.breadcrumbs}
+          coverageCircles={locationData.coverageCircles}
+          gpsStale={locationData.gpsStale}
+          meteoDataDinamica={weatherData.meteoData}
+          marcarFoco={focosData.marcarFoco}
+          removerFoco={focosData.removerFoco}
+          limparFocos={focosData.limparFocos}
+          salvarFocoManual={focosData.salvarFocoManual}
+          setWaypointTemporario={focosData.setWaypointTemporario}
           setPage={setPage}
           darkMode={darkMode}
+          isCalibrating={compassData.isCalibrating}
+          setIsCalibrating={compassData.setIsCalibrating}
+          magneticDeclination={compassData.magneticDeclination}
         />
       );
 
@@ -109,7 +128,7 @@ export default function App() {
         <ShareScreen
           focos={focosData.focos}
           location={locationData.location}
-          triangulacaoResultado={null}
+          triangulacaoResultado={focosData.triangulacaoResultado}
           meteoDataDinamica={weatherData.meteoData}
           setPage={setPage}
           darkMode={darkMode}
@@ -142,7 +161,7 @@ export default function App() {
           pendingFireData={null}
           distanceSingle={distanceSingle}
           cameraPhoto={cameraData.cameraPhoto}
-          setCameraActive={cameraData.setCameraActive}
+          setCameraActive={setCameraActive}
           setCameraPhoto={cameraData.setCameraPhoto}
           setPendingFireData={() => {}}
           setPage={setPage}
