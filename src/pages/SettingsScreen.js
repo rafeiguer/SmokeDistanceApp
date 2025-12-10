@@ -1,122 +1,102 @@
-﻿import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+// ⚙️ SETTINGS SCREEN - Configurações
 
-export default function SettingsScreen({ darkMode, setDarkMode, setPage }) {
+import React from 'react';
+import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import { styles } from '../styles';
+import { darkStyles } from '../styles/darkStyles';
+
+export default function SettingsScreen({
+  darkMode,
+  setDarkMode,
+  gpsMode,
+  setGpsMode,
+  onNavigate,
+}) {
   return (
-    <View style={{ flex: 1, backgroundColor: darkMode ? '#121212' : '#2e7d32' }}>
-      <View style={{ 
-        backgroundColor: darkMode ? '#1E1E1E' : '#145A32', 
-        padding: 20, 
-        paddingTop: 50, 
-        alignItems: 'center',
-        elevation: 3
-      }}>
-        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#fff' }}>
-           Configurações
-        </Text>
+    <View style={[styles.container, darkMode && darkStyles.container]}>
+      <View style={[styles.header, darkMode && darkStyles.header]}>
+        <Text style={[styles.title, darkMode && darkStyles.title]}>⚙️ Configurações</Text>
       </View>
+      
+      <ScrollView style={styles.content}>
+        {/* Info da App */}
+        <View style={[styles.card, darkMode && darkStyles.card]}>
+          <Text style={[styles.cardTitle, darkMode && darkStyles.cardTitle]}>📱 Informações da App</Text>
+          <Text style={[styles.text, darkMode && darkStyles.text]}>SmokeDistance v1.0.0</Text>
+          <Text style={[styles.text, darkMode && darkStyles.text]}>Detecção de focos de fumaça</Text>
+          <Text style={[styles.text, darkMode && darkStyles.text]}>© 2025 VIA</Text>
+        </View>
 
-      <ScrollView style={{ flex: 1, padding: 15 }}>
-        <View style={{ 
-          backgroundColor: darkMode ? '#1E1E1E' : '#e8f5e9', 
-          padding: 15, 
-          borderRadius: 10, 
-          marginBottom: 15,
-          elevation: 2
-        }}>
-          <Text style={{ 
-            fontSize: 16, 
-            fontWeight: 'bold', 
-            color: darkMode ? '#E0E0E0' : '#666', 
-            marginBottom: 10 
-          }}>
-             Modo Escuro
+        {/* Modo GPS */}
+        <View style={[styles.card, darkMode && darkStyles.card]}>
+          <Text style={[styles.cardTitle, darkMode && darkStyles.cardTitle]}>📍 Atualização de GPS</Text>
+          <Text style={[styles.text, darkMode && darkStyles.text]}>Escolha o modo de atualização:</Text>
+          
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+            <TouchableOpacity
+              style={[styles.mapButton, { flex: 1, backgroundColor: gpsMode === 'eco' ? '#2E7D32' : '#9E9E9E' }]}
+              onPress={() => setGpsMode('eco')}
+            >
+              <Text style={styles.buttonText}>🔋 Eco</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.mapButton, { flex: 1, backgroundColor: gpsMode === 'normal' ? '#2E7D32' : '#9E9E9E' }]}
+              onPress={() => setGpsMode('normal')}
+            >
+              <Text style={styles.buttonText}>⚖️ Normal</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.mapButton, { flex: 1, backgroundColor: gpsMode === 'preciso' ? '#2E7D32' : '#9E9E9E' }]}
+              onPress={() => setGpsMode('preciso')}
+            >
+              <Text style={styles.buttonText}>🎯 Preciso</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <Text style={[styles.text, { fontSize: 12, color: '#555', marginTop: 10 }]}>
+            🔋 Eco: menos consumo (~5s/10m){'\n'}
+            ⚖️ Normal: equilibrado (~2s/3m){'\n'}
+            🎯 Preciso: máximo (~1s/1m)
           </Text>
+        </View>
+
+        {/* Tema Noite */}
+        <View style={[styles.card, darkMode && darkStyles.card]}>
+          <Text style={[styles.cardTitle, darkMode && darkStyles.cardTitle]}>🌙 Modo Noite</Text>
+          <Text style={[styles.text, darkMode && darkStyles.text]}>Economiza bateria (AMOLED) e reduz brilho em campo.</Text>
           
           <TouchableOpacity
-            style={{ 
-              backgroundColor: '#8B5C2A', 
-              padding: 12, 
-              borderRadius: 10, 
-              alignItems: 'center',
-              elevation: 2
-            }}
+            style={[styles.mapButton, { marginTop: 10, backgroundColor: darkMode ? '#4CAF50' : '#8B5C2A' }]}
             onPress={() => setDarkMode(!darkMode)}
           >
-            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>
-              {darkMode ? ' Ativar Modo Claro' : ' Ativar Modo Escuro'}
-            </Text>
+            <Text style={styles.buttonText}>{darkMode ? '✅ Ativo' : '🌙 Ativar'}</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={{ 
-          backgroundColor: darkMode ? '#1E1E1E' : '#e8f5e9', 
-          padding: 15, 
-          borderRadius: 10, 
-          marginBottom: 15,
-          elevation: 2
-        }}>
-          <Text style={{ 
-            fontSize: 16, 
-            fontWeight: 'bold', 
-            color: darkMode ? '#E0E0E0' : '#666', 
-            marginBottom: 10 
-          }}>
-             Sobre
+        {/* Sobre */}
+        <View style={[styles.card, { backgroundColor: '#FFF3E0', borderLeftWidth: 4, borderLeftColor: '#FF6F00' }]}>
+          <Text style={[styles.cardTitle, { color: '#FF6F00' }]}>ℹ️ Sobre SmokeDistance</Text>
+          <Text style={[styles.text, { color: '#333' }]}>
+            SmokeDistance é um aplicativo de detecção de focos de fumaça que utiliza:
           </Text>
-          
-          <Text style={{ color: darkMode ? '#D0D0D0' : '#666', marginBottom: 8, fontSize: 14 }}>
-            SmokeDistance v1.0.0
-          </Text>
-          
-          <Text style={{ color: darkMode ? '#D0D0D0' : '#666', fontSize: 14 }}>
-            Detecção de Fumaça com IA e Triangulação
-          </Text>
-        </View>
-
-        <View style={{ 
-          backgroundColor: darkMode ? '#1E1E1E' : '#e8f5e9', 
-          padding: 15, 
-          borderRadius: 10,
-          elevation: 2
-        }}>
-          <Text style={{ 
-            fontSize: 16, 
-            fontWeight: 'bold', 
-            color: darkMode ? '#E0E0E0' : '#666', 
-            marginBottom: 10 
-          }}>
-            ℹ Informações
-          </Text>
-          
-          <Text style={{ color: darkMode ? '#D0D0D0' : '#666', marginBottom: 5, fontSize: 13 }}>
-             Hooks Refatorados: 
-          </Text>
-          
-          <Text style={{ color: darkMode ? '#D0D0D0' : '#666', marginBottom: 5, fontSize: 13 }}>
-             Utils Modularizados: 
-          </Text>
-          
-          <Text style={{ color: darkMode ? '#D0D0D0' : '#666', fontSize: 13 }}>
-             Screens Componentizados: 
+          <Text style={[styles.text, { color: '#333', marginTop: 8 }]}>
+            ✅ GPS em tempo real{'\n'}
+            ✅ Câmera com telemétro 3D{'\n'}
+            ✅ Magnetômetro (bussola){'\n'}
+            ✅ Triangulação geodésica{'\n'}
+            ✅ Dados meteorológicos{'\n'}
+            ✅ Focos de satélite (FIRMS)
           </Text>
         </View>
       </ScrollView>
 
-      <TouchableOpacity
-        style={{ 
-          backgroundColor: '#8B5C2A', 
-          padding: 15, 
-          borderRadius: 10, 
-          alignItems: 'center', 
-          margin: 15,
-          elevation: 3
-        }}
-        onPress={() => setPage(1)}
+      <TouchableOpacity 
+        style={styles.buttonPrimary}
+        onPress={() => onNavigate(1)}
       >
-        <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>
-           Voltar
-        </Text>
+        <Text style={styles.buttonText}>← Voltar</Text>
       </TouchableOpacity>
     </View>
   );

@@ -1,69 +1,45 @@
-import { useEffect, useRef, useState } from 'react';
-import * as Location from 'expo-location';
-import {
-  GPS_STALE_LIMITS,
-  GPS_GRACE_PERIOD,
-  GPS_RESTART_GAP,
-  GPS_RECOVERY_CYCLE_DURATION,
-  BREADCRUMB_TRIGGER_MINUTES,
-  BREADCRUMB_DISTANCE_METERS,
-  MIN_RADIUS_FOR_CIRCLE,
-} from '../constants';
-import {
-  salvarBreadcrumbs,
-  carregarBreadcrumbs,
-  salvarCoverageCircles,
-  carregarCoverageCircles,
-} from '../utils/storage';
-import { calculateDistanceHaversine } from '../utils/calculations';
+// 📍 HOOK useLocation - GPS com Reinício Automático
 
-export function useLocation(isConnected, gpsMode = 'normal', prefsLoaded = true) {
-  // Estado
+import { useState, useEffect, useRef } from 'react';
+import * as Location from 'expo-location';
+import { DEFAULT_LOCATION, GPS_STALE_LIMIT_BASE_PRECISO, GPS_STALE_LIMIT_BASE_ECO, GPS_STALE_LIMIT_BASE_NORMAL, GPS_GRACE_PERIOD, GPS_RESTART_COOLDOWN, STALE_CYCLE_RETRY_THRESHOLD } from '../constants';
+
+export function useLocation(gpsMode = 'normal') {
   const [location, setLocation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [gpsStale, setGpsStale] = useState(false);
   const [gpsRestarting, setGpsRestarting] = useState(false);
+  
   const [lastLocationUpdateTs, setLastLocationUpdateTs] = useState(Date.now());
   const [gpsGraceUntil, setGpsGraceUntil] = useState(Date.now() + GPS_GRACE_PERIOD);
-  const [disconnectTime, setDisconnectTime] = useState(null);
-  const [lastKnownLocationBeforeDisconnect, setLastKnownLocationBeforeDisconnect] = useState(null);
-  const [breadcrumbs, setBreadcrumbs] = useState([]);
-  const [lastBreadcrumbLocation, setLastBreadcrumbLocation] = useState(null);
-  const [coverageCircles, setCoverageCircles] = useState([]);
-  const [coverageCenter, setCoverageCenter] = useState(null);
   const [watchRestartToken, setWatchRestartToken] = useState(0);
-  const [needsRecenter, setNeedsRecenter] = useState(false);
-  const [currentRegion, setCurrentRegion] = useState(null);
-
-  // Refs para controle fino
+  
   const lastGpsRestartRef = useRef(0);
   const staleLoggedRef = useRef(false);
   const gpsRecoveryAttemptedRef = useRef(false);
   const staleStartRef = useRef(0);
   const lastKnownRef = useRef(null);
-  const lastIsConnectedRef = useRef(null);
+  const watcherRef = useRef(null);
 
-  // 🔍 Obter localização inicial
+  // 🎯 Obter localização inicial
   useEffect(() => {
     (async () => {
       try {
-        console.log('🔍 Requisitando permissão de localização...');
+        console.log('📍 Requisitando permissão de localização...');
         const { status } = await Location.requestForegroundPermissionsAsync();
-
+        
         if (status !== 'granted') {
-          console.warn('⚠️ Permissão GPS negada');
-          setLocation({
-            latitude: -15.7939,
-            longitude: -47.8828,
-            altitude: 1200,
-          });
+          console.warn('⚠️ Permissão GPS negada, usando fallback');
+          setLocation(DEFAULT_LOCATION);
           setLoading(false);
           return;
         }
 
-        console.log('🔍 Obtendo localização...');
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-
+        console.log('📍 Obtendo localização...');
+        const loc = await Location.getCurrentPositionAsync({ 
+          accuracy: Location.Accuracy.Balanced 
+        });
+        
         if (loc?.coords) {
           console.log('✅ GPS obtido:', loc.coords);
           setLocation(loc.coords);
@@ -73,52 +49,18 @@ export function useLocation(isConnected, gpsMode = 'normal', prefsLoaded = true)
         }
       } catch (err) {
         console.error('❌ Erro ao obter GPS:', err.message);
-        setLocation({
-          latitude: -15.7939,
-          longitude: -47.8828,
-          altitude: 1200,
-        });
+        setLocation(DEFAULT_LOCATION);
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  // 📍 Carregar círculos de cobertura persistidos
-  useEffect(() => {
-    (async () => {
-      try {
-        const saved = await carregarCoverageCircles();
-        if (Array.isArray(saved)) {
-          setCoverageCircles(saved);
-        }
-      } catch (e) {
-        console.warn('⚠️ Erro ao carregar círculos:', e?.message);
-      }
-    })();
-  }, []);
-
-  // 🍞 Carregar breadcrumbs do AsyncStorage
-  useEffect(() => {
-    (async () => {
-      try {
-        const saved = await carregarBreadcrumbs();
-        if (Array.isArray(saved)) {
-          setBreadcrumbs(saved);
-          console.log(`🍞 Carregados ${saved.length} breadcrumbs salvos`);
-        }
-      } catch (err) {
-        console.warn('⚠️ Erro ao carregar breadcrumbs:', err);
-      }
-    })();
-  }, []);
-
-  // 🚶 Atualizar localização continuamente
+  // 🔄 Watcher contínuo com reinício automático
   useEffect(() => {
     let watcher = null;
+    
     (async () => {
-      if (!prefsLoaded) return;
-
       try {
         let perm = await Location.getForegroundPermissionsAsync();
         if (!perm.granted) {
@@ -126,8 +68,8 @@ export function useLocation(isConnected, gpsMode = 'normal', prefsLoaded = true)
           if (!perm.granted) return;
         }
 
-        // Configuração do watcher conforme modo GPS
-        const cfg = (() => {
+        // Configurar conforme modo GPS
+        const getConfig = () => {
           if (gpsMode === 'eco') {
             return { accuracy: Location.Accuracy.Balanced, distanceInterval: 10, timeInterval: 5000 };
           }
@@ -135,28 +77,30 @@ export function useLocation(isConnected, gpsMode = 'normal', prefsLoaded = true)
             return { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 1, timeInterval: 1000 };
           }
           return { accuracy: Location.Accuracy.High, distanceInterval: 3, timeInterval: 2000 };
-        })();
+        };
 
-        watcher = await Location.watchPositionAsync(cfg, (pos) => {
+        const config = getConfig();
+        
+        watcher = await Location.watchPositionAsync(config, (pos) => {
           if (pos?.coords) {
             setLastLocationUpdateTs(Date.now());
-
+            
+            // Fim do estado de reinício
             if (gpsRestarting) {
               setGpsRestarting(false);
               setGpsGraceUntil(Date.now() + 7000);
             }
-
+            
+            // Reset flags
             staleLoggedRef.current = false;
             gpsRecoveryAttemptedRef.current = false;
-
-            setLocation((prev) => {
-              if (!prev) return pos.coords;
-              const moved =
-                Math.abs(prev.latitude - pos.coords.latitude) > 0.000005 ||
-                Math.abs(prev.longitude - pos.coords.longitude) > 0.000005;
+            
+            setLocation(prev => {
+              const moved = Math.abs(prev?.latitude - pos.coords.latitude) > 0.000005 || 
+                           Math.abs(prev?.longitude - pos.coords.longitude) > 0.000005;
               return moved ? pos.coords : prev;
             });
-
+            
             lastKnownRef.current = pos.coords;
           }
         });
@@ -166,21 +110,21 @@ export function useLocation(isConnected, gpsMode = 'normal', prefsLoaded = true)
     })();
 
     return () => {
-      try {
-        if (watcher) watcher.remove();
-      } catch {}
+      if (watcher) watcher.remove();
     };
-  }, [gpsMode, prefsLoaded, watchRestartToken]);
+  }, [gpsMode, gpsRestarting, watchRestartToken]);
 
-  // ⚠️ Monitorar inatividade do GPS
+  // 🔍 Monitorar inatividade e reiniciar
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
       if (now < gpsGraceUntil) return;
-
-      const inactiveMs = now - lastLocationUpdateTs;
-      const baseLimit = gpsMode === 'preciso' ? 6000 : gpsMode === 'eco' ? 15000 : 10000;
+      
+      const baseLimit = gpsMode === 'preciso' ? GPS_STALE_LIMIT_BASE_PRECISO : 
+                       gpsMode === 'eco' ? GPS_STALE_LIMIT_BASE_ECO : 
+                       GPS_STALE_LIMIT_BASE_NORMAL;
       const limit = Math.round(baseLimit * 1.5);
+      const inactiveMs = now - lastLocationUpdateTs;
       const isStale = inactiveMs > limit;
 
       if (isStale) {
@@ -188,24 +132,23 @@ export function useLocation(isConnected, gpsMode = 'normal', prefsLoaded = true)
           setGpsStale(true);
           staleStartRef.current = now;
         }
-
+        
         if (!staleLoggedRef.current) {
-          console.log(`⚠️ GPS parado há ${(inactiveMs / 1000).toFixed(1)}s (> ${limit / 1000}s).`);
+          console.log(`⚠️ GPS parado hÃ¡ ${(inactiveMs/1000).toFixed(1)}s`);
           staleLoggedRef.current = true;
         }
 
         const sinceLastRestart = now - (lastGpsRestartRef.current || 0);
         const cycleDuration = staleStartRef.current ? now - staleStartRef.current : inactiveMs;
-        const allowRetryThisCycle = cycleDuration > GPS_RECOVERY_CYCLE_DURATION;
 
-        if (!gpsRecoveryAttemptedRef.current && sinceLastRestart > GPS_RESTART_GAP && !gpsRestarting) {
+        if (!gpsRecoveryAttemptedRef.current && sinceLastRestart > GPS_RESTART_COOLDOWN && !gpsRestarting) {
           gpsRecoveryAttemptedRef.current = true;
           lastGpsRestartRef.current = now;
           setGpsRestarting(true);
-          console.log(`🔄 Reiniciando watcher (1ª tentativa ciclo, gap ${(sinceLastRestart / 1000).toFixed(1)}s)`);
+          console.log(`🔄 Reiniciando watcher`);
           setWatchRestartToken(Date.now());
           setGpsGraceUntil(Date.now() + 8000);
-        } else if (allowRetryThisCycle && sinceLastRestart > GPS_RESTART_GAP && !gpsRestarting && gpsRecoveryAttemptedRef.current) {
+        } else if (cycleDuration > STALE_CYCLE_RETRY_THRESHOLD && sinceLastRestart > GPS_RESTART_COOLDOWN && !gpsRestarting && gpsRecoveryAttemptedRef.current) {
           gpsRecoveryAttemptedRef.current = false;
           staleLoggedRef.current = false;
         }
@@ -221,158 +164,11 @@ export function useLocation(isConnected, gpsMode = 'normal', prefsLoaded = true)
     return () => clearInterval(interval);
   }, [lastLocationUpdateTs, gpsMode, gpsStale, gpsRestarting, gpsGraceUntil]);
 
-  // 📡 Monitorar conectividade (transições de rede)
-  useEffect(() => {
-    const handleConnectionChange = (isNowConnected) => {
-      const loc = location;
-
-      // Detectar queda de rede
-      if (lastIsConnectedRef.current === true && isNowConnected === false && loc) {
-        console.log('🔴 Rede caiu! Congelando última localização conhecida...');
-        setLastKnownLocationBeforeDisconnect(loc);
-        setDisconnectTime(Date.now());
-        setLastBreadcrumbLocation(loc);
-
-        (async () => {
-          try {
-            const center = coverageCenter || lastKnownRef.current || loc;
-            await addCoverageCircleIfValid(center, loc);
-          } finally {
-            setCoverageCenter(null);
-          }
-        })();
-      }
-
-      // Detectar reconexão
-      if (lastIsConnectedRef.current === false && isNowConnected === true) {
-        if (disconnectTime) {
-          console.log('🟢 Rede restaurada! Removendo marcador congelado...');
-          setLastKnownLocationBeforeDisconnect(null);
-          setDisconnectTime(null);
-          setLastBreadcrumbLocation(null);
-          if (loc) setCoverageCenter(loc);
-        }
-      }
-
-      lastIsConnectedRef.current = isNowConnected;
-    };
-
-    handleConnectionChange(isConnected);
-  }, [isConnected, location, disconnectTime, coverageCenter]);
-
-  // 🍞 Sistema de Breadcrumbs
-  useEffect(() => {
-    if (!disconnectTime || !location || isConnected) return;
-
-    const timeWithoutConnection = (Date.now() - disconnectTime) / 1000 / 60;
-
-    if (timeWithoutConnection >= BREADCRUMB_TRIGGER_MINUTES && lastBreadcrumbLocation) {
-      const dLat = location.latitude - lastBreadcrumbLocation.latitude;
-      const dLon = location.longitude - lastBreadcrumbLocation.longitude;
-      const distanceKm = Math.sqrt(dLat * dLat + dLon * dLon) * 111;
-      const distanceMeters = distanceKm * 1000;
-
-      if (distanceMeters >= BREADCRUMB_DISTANCE_METERS) {
-        console.log(`🍞 Criando breadcrumb! Distância: ${distanceMeters.toFixed(0)}m`);
-
-        const newBreadcrumb = {
-          id: Date.now(),
-          latitude: lastBreadcrumbLocation.latitude,
-          longitude: lastBreadcrumbLocation.longitude,
-          timestamp: Date.now(),
-        };
-
-        const updated = [...breadcrumbs, newBreadcrumb];
-        setBreadcrumbs(updated);
-        setLastBreadcrumbLocation(location);
-      }
-    }
-  }, [location, disconnectTime, isConnected, lastBreadcrumbLocation, breadcrumbs]);
-
-  // 💾 Salvar breadcrumbs persistentemente
-  useEffect(() => {
-    try {
-      if (breadcrumbs.length > 0) {
-        salvarBreadcrumbs(breadcrumbs);
-      }
-    } catch (err) {
-      console.warn('⚠️ Erro ao salvar breadcrumbs:', err);
-    }
-  }, [breadcrumbs]);
-
-  // 📍 Função auxiliar: adicionar círculo de cobertura
-  const addCoverageCircleIfValid = async (center, edge) => {
-    if (!center || !edge) return;
-
-    const radius = calculateDistanceHaversine(
-      center.latitude,
-      center.longitude,
-      edge.latitude,
-      edge.longitude
-    );
-
-    if (!isFinite(radius) || radius <= 0) return;
-    if (radius < MIN_RADIUS_FOR_CIRCLE) return;
-
-    try {
-      // Verificar se é área urbana (simplificado)
-      const res = await Location.reverseGeocodeAsync({
-        latitude: edge.latitude,
-        longitude: edge.longitude,
-      });
-
-      const info = res && res[0];
-      if (info && (info.city || info.subregion || info.district || info.street)) return;
-    } catch (e) {
-      // continua mesmo se falhar reverse geocode
-    }
-
-    const circle = {
-      id: Date.now(),
-      center: { latitude: center.latitude, longitude: center.longitude },
-      radius,
-      timestamp: Date.now(),
-    };
-
-    const next = [...coverageCircles, circle];
-    setCoverageCircles(next);
-
-    try {
-      await salvarCoverageCircles(next);
-    } catch {}
-  };
-
   return {
     location,
     loading,
     gpsStale,
     gpsRestarting,
-    lastLocationUpdateTs,
-    gpsGraceUntil,
-    disconnectTime,
-    lastKnownLocationBeforeDisconnect,
-    breadcrumbs,
-    lastBreadcrumbLocation,
-    coverageCircles,
-    coverageCenter,
-    watchRestartToken,
-    needsRecenter,
-    currentRegion,
-    setLocation,
-    setLoading,
-    setGpsStale,
-    setGpsRestarting,
-    setLastLocationUpdateTs,
-    setGpsGraceUntil,
-    setDisconnectTime,
-    setLastKnownLocationBeforeDisconnect,
-    setBreadcrumbs,
-    setLastBreadcrumbLocation,
-    setCoverageCircles,
-    setCoverageCenter,
-    setWatchRestartToken,
-    setNeedsRecenter,
-    setCurrentRegion,
+    lastKnownRef: lastKnownRef.current,
   };
 }
- 

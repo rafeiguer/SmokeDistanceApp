@@ -1,142 +1,140 @@
-﻿import React from 'react';
-import { View, ScrollView, Text, TouchableOpacity, Alert } from 'react-native';
+// 🏠 HOME SCREEN - Página Inicial
 
-export default function HomeScreen({ 
-  location, 
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { styles } from '../styles';
+import { darkStyles } from '../styles/darkStyles';
+
+export default function HomeScreen({
+  location,
+  loading,
+  focos,
+  triangulacaoResultado,
   meteoDataDinamica,
   isConnected,
-  pendingFireData,
-  distanceSingle,
   cameraPhoto,
-  setCameraActive,
-  setCameraPhoto,
-  setPendingFireData,
-  setPage,
+  distanceSingle,
+  smokeHeight,
+  setSmokeHeight,
   darkMode,
-  compassData,
-  focosData,
-  networkData
+  onNavigate,
+  onCameraOpen,
+  onCameraClear,
 }) {
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>📱 SmokeDistance</Text>
+        </View>
+        <View style={styles.content}>
+          <Text style={styles.text}>🔄 Obtendo localização...</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
-    <View style={{ flex: 1, backgroundColor: darkMode ? '#121212' : '#2e7d32' }}>
-      <View style={{ 
-        backgroundColor: darkMode ? '#1E1E1E' : '#145A32', 
-        padding: 20, 
-        paddingTop: 50, 
-        alignItems: 'center', 
-        elevation: 3 
-      }}>
-        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#fff' }}>
-           SmokeDistance
-        </Text>
-        <Text style={{ fontSize: 12, color: '#ddd', marginTop: 5 }}>
-          Detecção de Fumaça
-        </Text>
+    <View style={[styles.container, darkMode && darkStyles.container]}>
+      <View style={[styles.header, darkMode && darkStyles.header]}>
+        <Text style={[styles.title, darkMode && darkStyles.title]}>📱 SmokeDistance</Text>
+        <Text style={[styles.subtitle, darkMode && darkStyles.subtitle]}>Detecção de Fumaça</Text>
       </View>
 
-
-      <ScrollView style={{ flex: 1, padding: 15 }}>
-        {/* Card Localização GPS */}
-        <View style={{ backgroundColor: darkMode ? '#1E1E1E' : '#e8f5e9', padding: 15, borderRadius: 10, marginBottom: 15, elevation: 2 }}>
-          <Text style={{ fontSize: 16, fontWeight: 'bold', color: darkMode ? '#E0E0E0' : '#666', marginBottom: 10 }}>📍 Localização GPS</Text>
+      <ScrollView style={styles.content}>
+        {/* Localização GPS */}
+        <View style={[styles.card, darkMode && darkStyles.card]}>
+          <Text style={[styles.cardTitle, darkMode && darkStyles.cardTitle]}>📍 Localização GPS</Text>
           {location ? (
             <>
-              <Text style={{ fontSize: 14, color: darkMode ? '#D0D0D0' : '#666', marginBottom: 5 }}>Lat: {location.latitude.toFixed(4)}°</Text>
-              <Text style={{ fontSize: 14, color: darkMode ? '#D0D0D0' : '#666', marginBottom: 5 }}>Lon: {location.longitude.toFixed(4)}°</Text>
-              <Text style={{ fontSize: 14, color: darkMode ? '#D0D0D0' : '#666' }}>Alt: {location.altitude ? location.altitude.toFixed(1) : 'N/D'}m</Text>
+              <Text style={[styles.text, darkMode && darkStyles.text]}>Lat: {location.latitude.toFixed(4)}°</Text>
+              <Text style={[styles.text, darkMode && darkStyles.text]}>Lon: {location.longitude.toFixed(4)}°</Text>
+              <Text style={[styles.text, darkMode && darkStyles.text]}>Alt: {location.altitude ? location.altitude.toFixed(1) : 'N/D'}m</Text>
             </>
           ) : (
-            <Text style={{ fontSize: 14, color: darkMode ? '#D0D0D0' : '#666' }}>❌ GPS não disponível</Text>
+            <Text style={[styles.text, darkMode && darkStyles.text]}>❌ GPS não disponível</Text>
           )}
         </View>
 
-        {/* Card Meteorologia */}
-        <View style={{ backgroundColor: darkMode ? '#1E1E1E' : '#e8f5e9', padding: 15, borderRadius: 10, marginBottom: 15, elevation: 2 }}>
-          <Text style={{ fontSize: 16, fontWeight: 'bold', color: darkMode ? '#E0E0E0' : '#666', marginBottom: 10 }}>🌡️ Meteorologia</Text>
-          <Text style={{ fontSize: 14, color: darkMode ? '#D0D0D0' : '#666', marginBottom: 5 }}>Temp: {meteoDataDinamica?.temp ?? 'N/D'}°C</Text>
-          <Text style={{ fontSize: 14, color: darkMode ? '#D0D0D0' : '#666', marginBottom: 5 }}>Umidade: {meteoDataDinamica?.humidity ?? 'N/D'}%</Text>
-          <Text style={{ fontSize: 14, color: darkMode ? '#D0D0D0' : '#666', marginBottom: 5 }}>Vento: {meteoDataDinamica?.windSpeed ?? 'N/D'} km/h</Text>
-          <Text style={{ fontSize: 14, color: darkMode ? '#D0D0D0' : '#666' }}>Direção: {meteoDataDinamica?.windDirection ?? 'N/D'}°</Text>
+        {/* Dados Meteorológicos */}
+        <View style={[styles.card, darkMode && darkStyles.card]}>
+          <Text style={[styles.cardTitle, darkMode && darkStyles.cardTitle]}>📊 Dados Meteorológicos</Text>
+          <Text style={[styles.text, darkMode && darkStyles.text]}>🌡️ Temperatura: {meteoDataDinamica.temp}°C</Text>
+          <Text style={[styles.text, darkMode && darkStyles.text]}>💧 Umidade: {meteoDataDinamica.humidity}%</Text>
+          <Text style={[styles.text, darkMode && darkStyles.text]}>💨 Vento: {meteoDataDinamica.windSpeed} km/h</Text>
+          <Text style={[styles.text, darkMode && darkStyles.text]}>🧭 Direção: {meteoDataDinamica.windDirection}°</Text>
+          <Text style={[styles.text, { color: '#1976D2', fontWeight: 'bold', marginTop: 8 }]}>
+            🌦️ {meteoDataDinamica.descricao}
+          </Text>
+          {!isConnected && (
+            <Text style={[styles.text, { color: '#ff9800', fontSize: 12, marginTop: 5 }]}>
+              ⚠️ Dados em cache (sem internet)
+            </Text>
+          )}
         </View>
 
+        {/* Resultado Distância */}
+        {distanceSingle && (
+          <View style={[styles.card, { backgroundColor: '#e8f5e9' }]}>
+            <Text style={[styles.cardTitle, { color: '#2e7d32' }]}>✅ Distância Calculada</Text>
+            <Text style={[styles.text, { color: '#1b5e20', fontWeight: 'bold', fontSize: 16 }]}>
+              {distanceSingle.toFixed(1)} metros
+            </Text>
+          </View>
+        )}
+
+        {/* Foto Capturada */}
+        {cameraPhoto && (
+          <View style={[styles.card, { backgroundColor: '#e8f5e9' }]}>
+            <Text style={[styles.cardTitle, { color: '#2e7d32' }]}>📷 Foto Capturada</Text>
+            <Text style={styles.text}>✅ Foto documentada</Text>
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: '#8B5C2A', marginTop: 8 }]}
+              onPress={onCameraClear}
+            >
+              <Text style={styles.buttonText}>🗑️ Limpar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Botão Câmera */}
         <TouchableOpacity 
-          style={{ 
-            backgroundColor: '#8B5C2A', 
-            padding: 15, 
-            borderRadius: 10, 
-            alignItems: 'center', 
-            marginBottom: 15,
-            elevation: 3
-          }}
-          onPress={() => setCameraActive(true)}
+          style={[styles.buttonPrimary, darkMode && darkStyles.buttonPrimary, { backgroundColor: '#8B5C2A', marginBottom: 15 }]}
+          onPress={onCameraOpen}
         >
-          <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>
-             CÂMERA
-          </Text>
+          <Text style={styles.buttonText}>📷 CÂMERA</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={{ 
-            backgroundColor: '#8B5C2A', 
-            padding: 12, 
-            borderRadius: 10, 
-            alignItems: 'center', 
-            marginBottom: 10,
-            elevation: 2
-          }}
-          onPress={() => setPage(2)}
-        >
-          <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>
-             Mapa
-          </Text>
-        </TouchableOpacity>
+        {/* Botões de Navegação */}
+        <View>
+          <TouchableOpacity 
+            style={[styles.button, { backgroundColor: '#8B5C2A', borderRadius: 10, padding: 12, alignItems: 'center', elevation: 2, marginBottom: 10 }]}
+            onPress={() => onNavigate(2)}
+          >
+            <Text style={styles.buttonText}>🗺️ Mapa</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={{ 
-            backgroundColor: '#8B5C2A', 
-            padding: 12, 
-            borderRadius: 10, 
-            alignItems: 'center', 
-            marginBottom: 10,
-            elevation: 2
-          }}
-          onPress={() => setPage(5)}
-        >
-          <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>
-             Satélites
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.button, { backgroundColor: '#8B5C2A', borderRadius: 10, padding: 12, alignItems: 'center', elevation: 2, marginBottom: 10 }]}
+            onPress={() => onNavigate(5)}
+          >
+            <Text style={styles.buttonText}>🛰️ Satélites</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={{ 
-            backgroundColor: '#8B5C2A', 
-            padding: 12, 
-            borderRadius: 10, 
-            alignItems: 'center', 
-            marginBottom: 10,
-            elevation: 2
-          }}
-          onPress={() => setPage(4)}
-        >
-          <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>
-             Compartilhar
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.button, { backgroundColor: '#8B5C2A', borderRadius: 10, padding: 12, alignItems: 'center', elevation: 2, marginBottom: 10 }]}
+            onPress={() => onNavigate(4)}
+          >
+            <Text style={styles.buttonText}>📤 Compartilhar</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={{ 
-            backgroundColor: '#8B5C2A', 
-            padding: 12, 
-            borderRadius: 10, 
-            alignItems: 'center',
-            elevation: 2
-          }}
-          onPress={() => setPage(3)}
-        >
-          <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>
-             Config
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.button, { backgroundColor: '#8B5C2A', borderRadius: 10, padding: 12, alignItems: 'center', elevation: 2 }]}
+            onPress={() => onNavigate(3)}
+          >
+            <Text style={styles.buttonText}>⚙️ Config</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );

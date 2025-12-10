@@ -1,243 +1,215 @@
+// 📷 CAMERA SCREEN - Câmera com Overlay HUD
+
 import React, { useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Image } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 
 export default function CameraScreen({
-  cameraPhoto,
-  setCameraPhoto,
-  cameraDynamicDistance,
-  cameraObjectHeight,
-  pitchAngle,
-  setCameraActive,
-  marcarFoco,
   location,
-  darkMode,
   smoothHeading,
   magneticDeclination,
-  focos
+  cameraDynamicDistance,
+  pitchAngle,
+  cameraRef,
+  onCapture,
+  onCancel,
 }) {
-  const cameraRef = useRef(null);
   const [permission, requestPermission] = useCameraPermissions();
-
-  const handleCapturarFoto = async () => {
-    try {
-      if (cameraRef.current) {
-        const photo = await cameraRef.current.takePictureAsync({ quality: 0.5, skipProcessing: true });
-        setCameraPhoto(photo);
-        Alert.alert('✅ Foto Capturada', 'Foto documentada com sucesso!');
-      }
-    } catch (err) {
-      Alert.alert('❌ Erro', 'Falha ao capturar foto: ' + err.message);
-    }
-  };
+  const internalCameraRef = useRef(null);
 
   if (!permission?.granted) {
     return (
-      <View style={styles.permissionContainer}>
-        <Text style={styles.permissionText}>📷 Permissão da câmera necessária</Text>
-        <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>Permitir Câmera</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.permissionButton, { backgroundColor: '#666' }]} onPress={() => setCameraActive(false)}>
-          <Text style={styles.permissionButtonText}>Fechar</Text>
-        </TouchableOpacity>
+      <View style={cameraStyles.container}>
+        <View style={cameraStyles.header}>
+          <Text style={cameraStyles.title}>📷 Câmera</Text>
+        </View>
+        <View style={cameraStyles.content}>
+          <Text style={cameraStyles.text}>Permissão de câmera negada</Text>
+          <TouchableOpacity 
+            style={[cameraStyles.button, { marginTop: 15 }]}
+            onPress={requestPermission}
+          >
+            <Text style={cameraStyles.buttonText}>✅ Solicitar Permissão</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[cameraStyles.button, { backgroundColor: '#8B5C2A', marginTop: 10 }]}
+            onPress={onCancel}
+          >
+            <Text style={cameraStyles.buttonText}>❌ Cancelar</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      {/* Camera View */}
-      <CameraView ref={cameraRef} style={styles.camera} facing="back" />
+    <View style={cameraStyles.container}>
+      {/* Câmera + Overlay */}
+      <View style={{ flex: 1, position: 'relative' }}>
+        <CameraView 
+          ref={internalCameraRef}
+          style={cameraStyles.camera}
+          facing="back"
+        />
+        
+        {/* HUD Overlay */}
+        <View style={cameraStyles.cameraOverlay}>
+          {/* Cabeçalho */}
+          <View style={cameraStyles.overlayHeader}>
+            <Text style={cameraStyles.overlayTitle}>🎥 CAPTURA DE FUMAÇA</Text>
+          </View>
 
-      {/* HUD Overlay */}
-      <View style={styles.hudOverlay}>
-        {/* Header - Título */}
-        <View style={styles.hudHeader}>
-          <Text style={styles.hudTitle}>🎥 CAPTURA DE FUMAÇA</Text>
-          <Text style={styles.hudSubtitle}>Telêmetro 3D em Tempo Real</Text>
-        </View>
+          {/* Centro - Alvo */}
+          <View style={cameraStyles.overlayCenter}>
+            <View style={cameraStyles.targetReticle} />
+          </View>
 
-        {/* Center - Reticle */}
-        <View style={styles.hudCenter}>
-          <View style={styles.targetReticle}>
-            <View style={[styles.crosshairLine, { width: 2, height: 60 }]} />
-            <View style={[styles.crosshairLine, { width: 60, height: 2 }]} />
+          {/* Dados em tempo real */}
+          <View style={cameraStyles.overlayData}>
+            <Text style={cameraStyles.overlayText}>📍 LAT: {location?.latitude.toFixed(4)}°</Text>
+            <Text style={cameraStyles.overlayText}>📍 LON: {location?.longitude.toFixed(4)}°</Text>
+            <Text style={cameraStyles.overlayText}>📍 ALT: {location?.altitude?.toFixed(1) || '?'}m</Text>
+            <Text style={cameraStyles.overlayText}>📐 PITCH: {Math.round(pitchAngle)}°</Text>
+            
+            {/* Distância dinâmica */}
+            <Text style={[cameraStyles.overlayText, { color: '#00ff00', fontWeight: 'bold', marginTop: 8, fontSize: 16 }]}>
+              🎯 DIST 3D: {cameraDynamicDistance !== null ? cameraDynamicDistance.toFixed(1) : '?'}m
+            </Text>
+            
+            <Text style={cameraStyles.overlayText}>🧭 RUMO: {(Math.round(smoothHeading) % 360) || 0}° (Decl: {magneticDeclination.toFixed(1)}°)</Text>
           </View>
         </View>
-
-        {/* Data Panel - Telemetria */}
-        <View style={styles.hudDataPanel}>
-          {/* Localização GPS */}
-          <Text style={styles.hudDataTitle}>📍 LOCALIZAÇÃO GPS</Text>
-          <Text style={styles.hudDataText}>LAT: {location?.latitude?.toFixed(4) ?? 'N/D'}°</Text>
-          <Text style={styles.hudDataText}>LON: {location?.longitude?.toFixed(4) ?? 'N/D'}°</Text>
-          <Text style={styles.hudDataText}>ALT: {location?.altitude?.toFixed(1) ?? 'N/D'}m</Text>
-
-          {/* Orientação */}
-          <Text style={[styles.hudDataTitle, { marginTop: 10 }]}>🧭 ORIENTAÇÃO</Text>
-          <Text style={styles.hudDataText}>RUMO: {(Math.round(smoothHeading) % 360) || 0}°</Text>
-          <Text style={styles.hudDataText}>DECL: {magneticDeclination?.toFixed(1) ?? 'N/D'}°</Text>
-          <Text style={styles.hudDataText}>PITCH: {Math.round(pitchAngle)}°</Text>
-
-          {/* Distância 3D - Destaque */}
-          <Text style={[styles.hudDataTitle, { marginTop: 10, color: '#00ff00', fontSize: 16, fontWeight: 'bold' }]}>
-            🎯 DISTÂNCIA 3D
-          </Text>
-          <Text style={[styles.hudDataText, { color: '#00ff00', fontSize: 18, fontWeight: 'bold' }]}>
-            {cameraDynamicDistance !== null && cameraDynamicDistance !== undefined ? cameraDynamicDistance.toFixed(1) : '?'}m
-          </Text>
-
-          {/* Altura do Objeto */}
-          <Text style={[styles.hudDataTitle, { marginTop: 10 }]}>📏 ALTURA DO OBJETO</Text>
-          <Text style={styles.hudDataText}>{cameraObjectHeight ?? 'N/D'}m</Text>
-
-          {/* Focos Marcados */}
-          <Text style={[styles.hudDataTitle, { marginTop: 10, color: '#ff6f00' }]}>🔥 FOCOS MARCADOS</Text>
-          <Text style={[styles.hudDataText, { color: '#ff6f00' }]}>{focos?.length ?? 0}/5</Text>
-        </View>
       </View>
-
-      {/* Control Buttons - Footer */}
-      <View style={styles.controlsContainer}>
-        <TouchableOpacity style={[styles.controlButton, styles.captureButton]} onPress={handleCapturarFoto}>
-          <Text style={styles.controlButtonText}>📸 CAPTURAR</Text>
+      
+      {/* Controles */}
+      <View style={cameraStyles.cameraControls}>
+        <TouchableOpacity 
+          style={[cameraStyles.button, { backgroundColor: '#8B5C2A', borderRadius: 10, padding: 12, flex: 1, marginRight: 10 }]}
+          onPress={async () => {
+            try {
+              if (internalCameraRef.current) {
+                const photo = await internalCameraRef.current.takePictureAsync({
+                  quality: 0.8,
+                  exif: true,
+                });
+                onCapture(photo);
+                Alert.alert('✅ Foto Capturada', `🎯 Distância 3D: ${cameraDynamicDistance?.toFixed(1) || '?'}m\n📐 Pitch: ${Math.round(pitchAngle)}°`);
+              }
+            } catch (err) {
+              console.error('❌ Erro ao capturar:', err);
+              Alert.alert('❌ Erro', 'Erro ao capturar foto');
+            }
+          }}
+        >
+          <Text style={cameraStyles.buttonText}>📸 CAPTURAR</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.controlButton, styles.closeButton]} onPress={() => setCameraActive(false)}>
-          <Text style={styles.controlButtonText}>✖️ FECHAR</Text>
+        <TouchableOpacity 
+          style={[cameraStyles.button, { backgroundColor: '#8B5C2A', borderRadius: 10, padding: 12, flex: 1 }]}
+          onPress={onCancel}
+        >
+          <Text style={cameraStyles.buttonText}>❌ CANCELAR</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const cameraStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
   },
-  camera: {
-    flex: 1,
+  header: {
+    backgroundColor: '#145A32',
+    padding: 20,
+    paddingTop: 50,
+    alignItems: 'center',
   },
-  permissionContainer: {
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  content: {
     flex: 1,
-    backgroundColor: '#000',
+    padding: 15,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
   },
-  permissionText: {
-    color: '#fff',
-    fontSize: 18,
-    marginBottom: 20,
-    textAlign: 'center',
+  text: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 10,
   },
-  permissionButton: {
-    backgroundColor: '#8B5C2A',
+  button: {
+    backgroundColor: '#2196F3',
     padding: 15,
     borderRadius: 10,
-    marginBottom: 10,
-    width: '100%',
     alignItems: 'center',
+    marginBottom: 10,
+    elevation: 3,
   },
-  permissionButtonText: {
+  buttonText: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 14,
   },
-  hudOverlay: {
+  camera: {
+    flex: 1,
+  },
+  cameraOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    bottom: 80,
+    bottom: 0,
     justifyContent: 'space-between',
-    paddingTop: 20,
-    paddingHorizontal: 15,
-    paddingBottom: 15,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    padding: 20,
     pointerEvents: 'none',
   },
-  hudHeader: {
+  overlayHeader: {
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 8,
   },
-  hudTitle: {
+  overlayTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 5,
   },
-  hudSubtitle: {
-    fontSize: 12,
-    color: '#aaa',
-  },
-  hudCenter: {
+  overlayCenter: {
     alignItems: 'center',
     justifyContent: 'center',
+    flex: 1,
   },
   targetReticle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 120,
+    height: 120,
     borderWidth: 2,
     borderColor: '#00ff00',
+    borderRadius: 60,
     backgroundColor: 'rgba(0, 255, 0, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  crosshairLine: {
-    position: 'absolute',
-    backgroundColor: '#00ff00',
-  },
-  hudDataPanel: {
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    padding: 12,
-    borderRadius: 10,
-    borderLeftWidth: 3,
-    borderLeftColor: '#00ff00',
-  },
-  hudDataTitle: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  hudDataText: {
-    fontSize: 13,
-    color: '#0f0',
-    marginBottom: 3,
-    fontFamily: 'Courier New',
-    fontWeight: '600',
-  },
-  controlsContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
-    padding: 10,
-    gap: 8,
-  },
-  controlButton: {
-    flex: 1,
-    padding: 12,
+  overlayData: {
+    backgroundColor: '#e8f5e9',
+    padding: 15,
     borderRadius: 8,
     alignItems: 'center',
-    elevation: 3,
   },
-  captureButton: {
-    backgroundColor: '#00AA00',
+  overlayText: {
+    color: '#00ff00',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 5,
+    fontFamily: 'Courier New',
   },
-  closeButton: {
-    backgroundColor: '#E53935',
-  },
-  controlButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 12,
+  cameraControls: {
+    flexDirection: 'row',
+    padding: 15,
+    backgroundColor: '#000',
+    gap: 10,
   },
 });

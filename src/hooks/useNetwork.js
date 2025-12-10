@@ -1,174 +1,175 @@
-import { useEffect, useRef, useState } from 'react';
-import NetInfo from '@react-native-community/netinfo';
-import { getPendingPings, clearProcessedPings } from '../utils/storage';
-import { getDb } from '../firebase';
+// 🌐 HOOK useNetwork - Conectividade + Coverage Circles
 
-export function useNetwork() {
+import { useState, useEffect, useRef } from 'react';
+import NetInfo from '@react-native-community/netinfo';
+import * as Location from 'expo-location';
+import { salvarCirculosSinal, carregarCirculosSinal } from '../services/storageService';
+import { calculateDistanceHaversine } from '../utils/calculations';
+import { MIN_RADIUS_FOR_CIRCLE } from '../constants';
+
+export function useNetwork(location) {
   const [isConnected, setIsConnected] = useState(false);
   const [networkMarker, setNetworkMarker] = useState(null);
-  const [communityPings, setCommunityPings] = useState([]);
-  const [showCommunityPings, setShowCommunityPings] = useState(false);
-
+  const [coverageCircles, setCoverageCircles] = useState([]);
+  const [lastKnownLocationBeforeDisconnect, setLastKnownLocationBeforeDisconnect] = useState(null);
+  const [disconnectTime, setDisconnectTime] = useState(null);
+  const [coverageCenter, setCoverageCenter] = useState(null);
+  
   const lastIsConnectedRef = useRef(null);
+  const locationRef = useRef(location);
+  const coverageCirclesRef = useRef([]);
 
-  // 📡 Listener de rede estável
+  // Sync refs
+  useEffect(() => {
+    locationRef.current = location;
+  }, [location]);
+
+  useEffect(() => {
+    coverageCirclesRef.current = coverageCircles;
+  }, [coverageCircles]);
+
+  // 💾 Carregar círculos salvos ao iniciar
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await carregarCirculosSinal();
+        if (Array.isArray(saved) && saved.length > 0) {
+          setCoverageCircles(saved);
+        }
+      } catch (e) {
+        console.warn('⚠️ Erro ao carregar círculos:', e?.message);
+      }
+    })();
+  }, []);
+
+  // 🌍 Monitorar conexão de rede
   useEffect(() => {
     try {
-      const unsubscribe = NetInfo.addEventListener((state) => {
-        try {
-          if (state.isConnected !== lastIsConnectedRef.current) {
-            console.log('📡 Status Rede:', state.isConnected ? 'Conectado' : 'Desconectado', state.type);
+      const unsubscribe = NetInfo.addEventListener(state => {
+        const loc = locationRef.current;
+        
+        // Detectar desconexão
+        if (lastIsConnectedRef.current === true && state.isConnected === false && loc) {
+          console.log('🔴 Rede caiu! Congelando localização...');
+          setLastKnownLocationBeforeDisconnect(loc);
+          setDisconnectTime(Date.now());
+          setCoverageCenter(loc);
+          
+          // Tentar adicionar círculo de cobertura
+          (async () => {
+            try {
+              const center = loc;
+              const edge = loc; // Usar mesmo ponto para calcular raio minimalista
+              await addCoverageCircleIfValid(center, edge);
+            } finally {
+              setCoverageCenter(null);
+            }
+          })();
+        }
+        
+        // Detectar reconexão
+        if (lastIsConnectedRef.current === false && state.isConnected === true) {
+          if (disconnectTime) {
+            console.log('🟢 Rede restaurada!');
+            setLastKnownLocationBeforeDisconnect(null);
+            setDisconnectTime(null);
+            if (loc) setCoverageCenter(loc);
           }
-
-          setIsConnected(state.isConnected);
-          lastIsConnectedRef.current = state.isConnected;
-        } catch (err) {
-          console.warn('⚠️ Erro ao processar estado de rede:', err.message);
+        }
+        
+        setIsConnected(state.isConnected);
+        lastIsConnectedRef.current = state.isConnected;
+        
+        // Atualizar marcador de sinal de rede
+        if (state.isConnected && loc) {
+          setNetworkMarker({
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            title: `📡 Sinal de Rede: ${state.type}`,
+            description: `Rede conectada!\nTipo: ${state.type}`
+          });
         }
       });
-
+      
       return () => {
         try {
           unsubscribe && unsubscribe();
-        } catch {}
+        } catch (e) {
+          console.warn('⚠️ Erro ao desinscrever:', e);
+        }
       };
     } catch (err) {
-      console.warn('⚠️ Erro ao iniciar monitoramento de rede:', err.message);
+      console.warn('⚠️ Erro ao iniciar monitoramento:', err.message);
     }
-  }, []);
+  }, [disconnectTime]);
 
-  // 📡 Enviar ping ao Firestore
-  const sendPingToFirestore = async (p) => {
+  /**
+   * Verifica se é área urbana (para não poluir com círculos)
+   */
+  async function shouldSkipCircle(edge) {
     try {
-      const db = getDb();
-      if (!db) return false;
-
-      const { addDoc, collection, serverTimestamp } = require('firebase/firestore');
-      await addDoc(collection(db, 'pings'), {
-        latitude: p.latitude,
-        longitude: p.longitude,
-        altitude: p.altitude || 0,
-        heading: p.heading || 0,
-        pitch: p.pitch || 0,
-        distancia: p.distancia || 0,
-        timestampLocal: p.timestamp || new Date().toLocaleTimeString('pt-BR'),
-        createdAt: serverTimestamp(),
+      if (!edge || !isConnected) return false;
+      
+      const res = await Location.reverseGeocodeAsync({
+        latitude: edge.latitude,
+        longitude: edge.longitude,
       });
-      return true;
+      
+      const info = res && res[0];
+      if (!info) return false;
+      
+      // Se tiver city/street/district, é urbano
+      if (info.city || info.subregion || info.district || info.street || info.name) {
+        return true;
+      }
+      return false;
     } catch (e) {
-      console.warn('⚠️ Erro ao enviar ping:', e.message);
       return false;
     }
-  };
+  }
 
-  // 📡 Drenar fila pendente ao reconectar
-  const syncPendingPings = async () => {
+  /**
+   * Adiciona círculo de cobertura se válido
+   */
+  async function addCoverageCircleIfValid(center, edge) {
+    if (!center || !edge) return;
+    
+    const radius = calculateDistanceHaversine(
+      center.latitude, center.longitude, 
+      edge.latitude, edge.longitude
+    );
+    
+    if (!isFinite(radius) || radius <= 0) return;
+    if (radius < MIN_RADIUS_FOR_CIRCLE) return;
+    
+    const urban = await shouldSkipCircle(edge);
+    if (urban) return;
+    
+    const circle = {
+      id: Date.now(),
+      center: { latitude: center.latitude, longitude: center.longitude },
+      radius,
+      timestamp: Date.now(),
+    };
+    
+    const next = [...coverageCirclesRef.current, circle];
+    setCoverageCircles(next);
+    
+    // Salvar no storage
     try {
-      const arr = await getPendingPings();
-      if (!arr.length) {
-        console.log('📡 Nenhum ping pendente');
-        return;
-      }
-
-      console.log(`📡 Sincronizndo ${arr.length} pings pendentes...`);
-
-      const kept = [];
-      const processedIndices = [];
-
-      for (let i = 0; i < arr.length; i++) {
-        const p = arr[i];
-        const ok = await sendPingToFirestore(p);
-        if (ok) {
-          processedIndices.push(i);
-          console.log(`✅ Ping ${i + 1}/${arr.length} sincronizado`);
-        } else {
-          kept.push(p);
-          console.log(`⚠️ Ping ${i + 1}/${arr.length} não foi sincronizado, mantendo na fila`);
-        }
-      }
-
-      await clearProcessedPings(processedIndices);
-      console.log(`✅ Sincronização concluída: ${processedIndices.length} sincronizados, ${kept.length} mantidos na fila`);
-    } catch (err) {
-      console.error('❌ Erro ao sincronizar pings:', err);
+      await salvarCirculosSinal(next);
+    } catch (e) {
+      console.warn('⚠️ Erro ao salvar círculos:', e);
     }
-  };
-
-  // 👥 Assinar pings recentes (filtra por bbox no cliente)
-  useEffect(() => {
-    if (!showCommunityPings) return;
-
-    const db = getDb();
-    if (!db) {
-      console.warn('⚠️ Firebase não configurado');
-      return;
-    }
-
-    try {
-      const { collection, query, orderBy, limit, onSnapshot } = require('firebase/firestore');
-      const q = query(collection(db, 'pings'), orderBy('createdAt', 'desc'), limit(200));
-
-      const unsub = onSnapshot(
-        q,
-        (snap) => {
-          const list = [];
-          snap.forEach((doc) => {
-            const d = doc.data();
-            if (!d || typeof d.latitude !== 'number' || typeof d.longitude !== 'number') return;
-            list.push({ id: doc.id, ...d });
-          });
-          setCommunityPings(list);
-          console.log(`👥 ${list.length} pings da comunidade carregados`);
-        },
-        (error) => {
-          console.warn('⚠️ Erro ao escutar pings:', error.message);
-        }
-      );
-
-      return () => {
-        try {
-          unsub && unsub();
-        } catch {}
-      };
-    } catch (err) {
-      console.warn('⚠️ Erro ao configurar listener de pings:', err.message);
-    }
-  }, [showCommunityPings]);
-
-  // 📡 Sincronizar quando conectar
-  useEffect(() => {
-    if (isConnected && lastIsConnectedRef.current === false) {
-      console.log('🟢 Rede restaurada! Sincronizando pings...');
-      syncPendingPings();
-    }
-    lastIsConnectedRef.current = isConnected;
-  }, [isConnected]);
-
-  // 📡 Atualizar marcador de rede
-  const updateNetworkMarker = (location, focos, waypointTemporario) => {
-    const temFocoMarcado = (focos?.length || 0) > 0 || waypointTemporario;
-
-    if (isConnected && location && temFocoMarcado) {
-      setNetworkMarker({
-        latitude: location.latitude,
-        longitude: location.longitude,
-        title: `📡 Sinal de Rede: ${state?.type || 'desconhecido'}`,
-        description: `Rede conectada!\nLat: ${location.latitude.toFixed(4)}\nLon: ${location.longitude.toFixed(4)}`
-      });
-    } else {
-      setNetworkMarker(null);
-    }
-  };
+  }
 
   return {
     isConnected,
     networkMarker,
-    setNetworkMarker,
-    communityPings,
-    showCommunityPings,
-    setShowCommunityPings,
-    syncPendingPings,
-    sendPingToFirestore,
-    updateNetworkMarker,
+    coverageCircles,
+    setCoverageCircles,
+    lastKnownLocationBeforeDisconnect,
+    disconnectTime,
+    addCoverageCircleIfValid,
   };
 }
