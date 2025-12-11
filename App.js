@@ -11,6 +11,7 @@ import { useSatellites } from './src/hooks/useSatellites';
 import { useNetwork } from './src/hooks/useNetwork';
 import { useBreadcrumbs } from './src/hooks/useBreadcrumbs';
 import { usePreferences } from './src/hooks/usePreferences';
+import { useWeatherData } from './src/hooks/useWeatherData';
 
 // 📄 Pages
 import HomeScreen from './src/pages/HomeScreen';
@@ -25,6 +26,7 @@ import { registerForPushNotificationsAsync } from './src/notifications';
 
 export default function App() {
   const mapRef = useRef(null);
+  const cameraRef = useRef(null);
   
   // ✅ Estados Principais
   const [page, setPage] = useState(1);
@@ -103,7 +105,7 @@ export default function App() {
         magneticDeclination={magneticDeclination}
         cameraDynamicDistance={cameraDynamicDistance}
         pitchAngle={pitchAngle}
-        cameraRef={useRef(null)}
+        cameraRef={cameraRef}
         onCapture={(photo) => {
           setCameraPhoto(photo);
           setCameraActive(false);
@@ -196,8 +198,7 @@ export default function App() {
         setDarkMode={setDarkMode}
         gpsMode={gpsMode}
         setGpsMode={setGpsMode}
-  
-       onNavigate={setPage}
+        onNavigate={setPage}
       />
     );
   }

@@ -1,7 +1,7 @@
 // 🛰️ HOOK useSatellites - Focos FIRMS/GOES/MSG
 
 import { useState } from 'react';
-import { loadSatelliteFocos as loadSatelliteFocosService } from '../services/satelliteService';
+import { loadSatelliteFocos as loadSatelliteFocosService } from '../services/satellitesService';
 
 export function useSatellites() {
   const [satelliteFocos, setSatelliteFocos] = useState([]);

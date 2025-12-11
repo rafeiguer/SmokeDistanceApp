@@ -78,7 +78,7 @@ export async function getMagneticDeclination(latitude, longitude, forceOnline = 
   try {
     // Tentar online se solicitado ou se não for fallback
     if (forceOnline) {
-      const online = await fetchWMMMDeclination(latitude, longitude);
+      const online = await fetchWMMDeclination(latitude, longitude);
       if (online !== null) return online;
     }
     
@@ -212,7 +212,7 @@ export function headingToCardinal(heading) {
 }
 
 export default {
-  fetchWMMMDeclination,
+  fetchWMMDeclination,
   calculateWMMOffline,
   getMagneticDeclination,
   calculateHeadingFromMagnetometer,
